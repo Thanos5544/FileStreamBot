@@ -5,9 +5,9 @@ class LANG(object):
 
     START_TEXT = """
 <b>👋 Hᴇʏ, </b>{}\n 
-<b>I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ</b>\n
-<b>ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ</b>\n
-<blockquote>🌿 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a></blockquote></b>"""
+<b>🎬 I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ 🚀</b>\n
+<b>⚡ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ 😍 </b>\n
+<blockquote>🌺 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a></blockquote></b>"""
 
     
     HELP_TEXT = """
@@ -17,16 +17,12 @@ class LANG(object):
 <b>🔞 ᴀᴅᴜʟᴛ ᴄᴏɴᴛᴇɴᴛ sᴛʀɪᴄᴛʟʏ ᴘʀᴏʜɪʙɪᴛᴇᴅ.</b>\n
 <i><b> ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ <a href='https://telegram.me/Patrick_Bateman'>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b></i>"""
 
-    ABOUT_TXT = """
-<b>⍟───[ MY ᴅᴇᴛᴀɪʟꜱ ]───⍟</b>
-
+    ABOUT_TEXT = """
 <b>‣ ᴍʏ ɴᴀᴍᴇ : {}</b>
-<b>‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href="tg://settings">ᴛʜɪs ᴘᴇʀsᴏɴ</a></b>
-<b>‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href="https://t.me/Patrick_Bateman_r">Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a></b>
-<b>‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href="https://koyeb.com">ᴋᴏʏᴇʙ</a></b>
-<b>‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.2 [sᴛᴀʙʟᴇ]</b>/n"""
-
-
+<b>‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href='tg://settings'>ᴛʜɪs ᴘᴇʀsᴏɴ</a></b>
+<b>‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href='https://koyeb.com'>ᴋᴏʏᴇʙ</a></b>
+<b>‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href='https://telegram.me/Patrick_Bateman'>Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a></b>\n
+"""
 
     STREAM_TEXT = """
 <i><u>𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !</u></i>\n
