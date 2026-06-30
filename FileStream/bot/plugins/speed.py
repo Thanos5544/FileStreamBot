@@ -8,7 +8,7 @@ from FileStream.bot import FileStream
 async def speed_test(_, m):
 
     msg = await m.reply_text(
-        "🚀 Sᴘᴇᴇᴅ Tᴇsᴛ Sᴛᴀʀᴛɪɴɢ..."
+        "⚡ Sᴘᴇᴇᴅ Cʜᴇᴄᴋɪɴɢ..."
     )
 
     try:
@@ -18,36 +18,27 @@ async def speed_test(_, m):
         download = st.download() / 1024 / 1024
         upload = st.upload() / 1024 / 1024
 
-        chrome_speed = download / 8
-
         await msg.edit_text(
-f"""🚀 **Sᴇʀᴠᴇʀ Sᴘᴇᴇᴅ Tᴇsᴛ**
+f"""**🚀 Sᴘᴇᴇᴅ Tᴇsᴛ**
 
-⬇️ **Dᴏᴡɴʟᴏᴀᴅ Sᴘᴇᴇᴅ:**
-`{download:.2f} Mbps`
+⚡ **Sᴇʀᴠᴇʀ Nᴇᴛᴡᴏʀᴋ Sᴘᴇᴇᴅ**
 
-⬆️ **Uᴘʟᴏᴀᴅ Sᴘᴇᴇᴅ:**
-`{upload:.2f} Mbps`
+⬇️ **Dᴏᴡɴʟᴏᴀᴅ:** `{download:.2f} Mbps`
+⬆️ **Uᴘʟᴏᴀᴅ:** `{upload:.2f} Mbps`
 
-📦 **Aᴘᴘʀᴏx Cʜʀᴏᴍᴇ Dᴏᴡɴʟᴏᴀᴅ:**
-`{chrome_speed:.2f} MB/s`
+📌 **Nᴏᴛᴇ:**
+**Iғ Cʜʀᴏᴍᴇ Sᴘᴇᴇᴅ ɪs Sʟᴏᴡ:**
+• **Tʀʏ ADM Dᴏᴡɴʟᴏᴀᴅᴇʀ ғᴏʀ Bᴇᴛᴛᴇʀ Sᴘᴇᴇᴅ**
+• **Sᴘᴇᴇᴅ Dᴇᴘᴇɴᴅs Oɴ Nᴇᴛᴡᴏʀᴋ**
 
-⚡ **Nᴏᴛᴇ:**
-Tʜɪs ɪs sᴇʀᴠᴇʀ ɴᴇᴛᴡᴏʀᴋ sᴘᴇᴇᴅ.
-
-Iғ Cʜʀᴏᴍᴇ Dᴏᴡɴʟᴏᴀᴅ sᴘᴇᴇᴅ ɪs sʟᴏᴡ:
-• Tʀʏ ADM Dᴏᴡɴʟᴏᴀᴅᴇʀ ғᴏʀ Bᴇᴛᴛᴇʀ Sᴘᴇᴇᴅ
-• Aᴄᴛᴜᴀʟ sᴘᴇᴇᴅ ᴅᴇᴘᴇɴᴅs ᴏɴ ɪɴᴛᴇʀɴᴇᴛ & Tᴇʟᴇɢʀᴀᴍ
-
-📌 1 Mbps ≈ 0.125 MB/s"""
+🔥 **Sᴇʀᴠᴇʀ Rᴜɴɴɪɴɢ Sᴍᴏᴏᴛʜʟʏ**
+"""
         )
-
-        await asyncio.sleep(30)
-        await msg.delete()
 
     except Exception as e:
         await msg.edit_text(
-            f"❌ Sᴘᴇᴇᴅ Tᴇsᴛ Fᴀɪʟᴇᴅ\n\n`{e}`"
+            f"❌ **Sᴘᴇᴇᴅ Fᴀɪʟᴇᴅ**\n`{e}`"
         )
-        await asyncio.sleep(30)
-        await msg.delete()
+
+    await asyncio.sleep(30)
+    await msg.delete()
