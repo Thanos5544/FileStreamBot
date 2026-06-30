@@ -166,21 +166,36 @@ from FileStream.utils.database import Database
 db = Database(Telegram.DATABASE_URL, Telegram.SESSION_NAME)
 
 
+import asyncio
+
+# Delete files function
+async def clear_all_files():
+    await db.file.delete_many({})
+
+    await db.users.update_many(
+        {},
+        {"$set": {"Links": 0}}
+    )
+
+
 # Manual delete all files
 @FileStream.on_message(filters.command("delete") & filters.private & filters.user(Telegram.OWNER_ID))
 async def delete_all_files(_, m: Message):
-    await db.file.delete_many({})
-    await m.reply_text("✅ All files deleted from MongoDB")
+
+    await clear_all_files()
+
+    await m.reply_text(
+        "✅ All files deleted from MongoDB\n\n🔄 All user links reset to 0"
+    )
 
 
 # Auto delete every 24 hours
 async def auto_delete_files():
+
     while True:
         await asyncio.sleep(86400)
-        await db.file.delete_many({})
-        
+
+        await clear_all_files()
+
 
 asyncio.create_task(auto_delete_files())
-
-
-
