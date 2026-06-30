@@ -13,7 +13,7 @@ class LANG(object):
 
 <blockquote>
 🌿 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : 
-<a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a>
+<a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a>
 </blockquote>
 """
     HELP_TEXT = """
