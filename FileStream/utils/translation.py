@@ -33,7 +33,7 @@ class LANG(object):
 <b>🖥 Wᴀᴛᴄʜ :</b> <code>{}</code>\n
 <b>🔸Nᴏᴛᴇ :</b> <i>Aʟʟ Cʀᴇᴀᴛᴇᴅ Lɪɴᴋꜱ Wɪʟʟ Exᴘɪʀᴇ Aꜰᴛᴇʀ 24 Hᴏᴜʀꜱ</i>
 """
-    STREAM_TEXT = """
+    STREAM_TEXT_X = """
 <i><u>𝗬𝗼𝘂𝗿 𝗟𝗶𝗻𝗸 𝗚𝗲𝗻𝗲𝗿𝗮𝘁𝗲𝗱 !</u></i>\n
 <b>📂 Fɪʟᴇ ɴᴀᴍᴇ :</b> <b>{}</b>\n
 <b>📦 Fɪʟᴇ ꜱɪᴢᴇ :</b> <code>{}</code>\n
