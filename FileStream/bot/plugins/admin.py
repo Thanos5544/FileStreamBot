@@ -201,8 +201,35 @@ async def clear_all_files():
         }
     )
 
+import asyncio
+from pyrogram import filters
+from pyrogram.types import Message
 
-# Manual delete all files
+from FileStream.bot import FileStream
+from FileStream.config import Telegram
+from FileStream.server.stream_routes import class_cache
+
+
+async def clear_all_files():
+
+    # Delete all files
+    await db.file.delete_many({})
+
+    # Reset all users links
+    await db.col.update_many(
+        {},
+        {
+            "$set": {
+                "Links": 0
+            }
+        }
+    )
+
+    # Clear stream cache (old links block)
+    class_cache.clear()
+
+
+# Manual delete
 @FileStream.on_message(
     filters.command("delete")
     & filters.private
@@ -215,7 +242,8 @@ async def delete_all_files(_, m: Message):
 
         await m.reply_text(
             "✅ **Aʟʟ Fɪʟᴇs Dᴇʟᴇᴛᴇᴅ**\n\n"
-            "🔄 **Aʟʟ U sᴇʀ Lɪɴᴋs Rᴇsᴇᴛ Tᴏ 0**"
+            "🚫 **Oʟᴅ Lɪɴᴋs Bʟᴏᴄᴋᴇᴅ**\n"
+            "🔄 **Aʟʟ Lɪɴᴋs Rᴇsᴇᴛ Tᴏ 0**"
         )
 
     except Exception as e:
@@ -232,8 +260,10 @@ async def auto_delete_files():
 
         try:
             await clear_all_files()
+            print("✅ Auto delete completed")
+
         except Exception as e:
-            print(f"Auto delete error: {e}")
+            print(f"❌ Auto delete error: {e}")
 
 
 asyncio.create_task(auto_delete_files())
