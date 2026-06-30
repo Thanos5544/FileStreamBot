@@ -4,23 +4,40 @@ from FileStream.config import Telegram
 class LANG(object):
 
     START_TEXT = """
-<b>👋 Hᴇʏ, </b>{}\n 
-<b>I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ</b>\n
-<b>ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ</b>\n
-<b>💕 @{}</b>\n"""
+<b>👋 Hᴇʏ, {}</b>
 
+<b>ɪ'ᴍ ᴀ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇ sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ 
+ᴀs ᴡᴇʟʟ ᴀs ᴀ ᴅɪʀᴇᴄᴛ ʟɪɴᴋ ɢᴇɴᴇʀᴀᴛᴏʀ 🚀</b>
+
+<b>⚡ ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs & ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ 😍</b>
+
+<blockquote>
+🌿 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : 
+<a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a>
+</blockquote>
+"""
     HELP_TEXT = """
 <b>- ᴀᴅᴅ ᴍᴇ ᴀs ᴀɴ ᴀᴅᴍɪɴ ᴏɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ</b>
 <b>- sᴇɴᴅ ᴍᴇ ᴀɴʏ ᴅᴏᴄᴜᴍᴇɴᴛ ᴏʀ ᴍᴇᴅɪᴀ</b>
 <b>- ɪ'ʟʟ ᴘʀᴏᴠɪᴅᴇ sᴛʀᴇᴀᴍᴀʙʟᴇ ʟɪɴᴋ</b>\n
 <b>🔞 ᴀᴅᴜʟᴛ ᴄᴏɴᴛᴇɴᴛ sᴛʀɪᴄᴛʟʏ ᴘʀᴏʜɪʙɪᴛᴇᴅ.</b>\n
-<i><b> ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ <a href='https://telegram.me/AvishkarPatil'>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b></i>"""
+<i><b> ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ <a href='https://telegram.me/Patrick_Bateman'>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b></i>"""
 
-    ABOUT_TEXT = """
-<b>⚜ ᴍʏ ɴᴀᴍᴇ : {}</b>\n
-<b>✦ ᴠᴇʀsɪᴏɴ : {}</b>
-<b>✦ ᴜᴘᴅᴀᴛᴇᴅ ᴏɴ : 06-January-2024</b>
-<b>✦ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href='https://telegram.me/AvishkarPatil'>Avishkar Patil</a></b>\n
+    ABOUT_TXT = """
+<b><blockquote>⍟───[ MY ᴅᴇᴛᴀɪʟꜱ ]───⍟</blockquote>
+
+‣ ᴍʏ ɴᴀᴍᴇ : <a href="https://t.me/{}">{}</a>
+
+‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href="tg://settings">ᴛʜɪs ᴘᴇʀsᴏɴ</a>
+
+‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href="https://t.me/Patrick_Bateman_r">Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a>
+
+‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href="https://koyeb.com">ᴋᴏʏᴇʙ</a>
+
+‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.2 [sᴛᴀʙʟᴇ]
+
+<blockquote>⍟────────────⍟</blockquote>
+</b>
 """
 
     STREAM_TEXT = """
