@@ -32,9 +32,10 @@ async def system_info(_, m):
 
     disk = psutil.disk_usage("/")
     disk_used = round(disk.used / 1024**3, 2)
-disk_total = round(disk.total / 1024**3, 2)
+    disk_total = round(disk.total / 1024**3, 2)
 
     os = platform.system()
+
     await msg.edit_text(
 f"""**⚙️ Sʏsᴛᴇᴍ Iɴғᴏ**
 
