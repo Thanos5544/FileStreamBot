@@ -31,8 +31,8 @@ async def system_info(_, m):
     ram_total = round(ram.total / 1024**2)
 
     disk = psutil.disk_usage("/")
-    disk_used = round(disk.used / 1024**2)
-    disk_total = round(disk.total / 1024**2)
+    disk_used = round(disk.used / 1024**3, 2)
+disk_total = round(disk.total / 1024**3, 2)
 
     os = platform.system()
 
@@ -44,7 +44,7 @@ f"""**⚙️ Sʏsᴛᴇᴍ Iɴғᴏ**
 ⏱️ **Uᴘᴛɪᴍᴇ:** `{days}d {hours}h {minutes}m`
 🖥️ **CPU:** `{cpu}% | {cores} Cᴏʀᴇs`
 💾 **RAM:** `{ram_used} MB / {ram_total} MB`
-📦 **Dɪsᴋ:** `{disk_used} MB / {disk_total} MB`
+📦 **Dɪsᴋ:** `{disk_used} GB / {disk_total} GB`
 🚀 **Sᴛᴀᴛᴜs:** `Oɴʟɪɴᴇ`
 
 ⚡ **Sᴇʀᴠᴇʀ Rᴜɴɴɪɴɢ Sᴍᴏᴏᴛʜʟʏ 🔥**"""
