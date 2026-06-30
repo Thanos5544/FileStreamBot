@@ -4,15 +4,18 @@ from FileStream.config import Telegram
 class LANG(object):
 
     START_TEXT = """
+<b>╭━━━❖✦❖━━━╮</b>
 <b>👋 Hᴇʏ, {}</b>
+<b>╰━━━❖✦❖━━━╯</b>
 
-<b>ɪ'ᴍ ᴀ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇ sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ 
+<b>ɪ'ᴍ ᴀ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇ sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ
 ᴀs ᴡᴇʟʟ ᴀs ᴀ ᴅɪʀᴇᴄᴛ ʟɪɴᴋ ɢᴇɴᴇʀᴀᴛᴏʀ 🚀</b>
 
 <b>⚡ ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs & ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ 😍</b>
 
 <blockquote>
-🌿 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : 
+🌿 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ :
+
 <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a>
 </blockquote>
 """
@@ -24,20 +27,19 @@ class LANG(object):
 <i><b> ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ <a href='https://telegram.me/Patrick_Bateman'>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b></i>"""
 
     ABOUT_TXT = """
-<b><blockquote>⍟───[ MY ᴅᴇᴛᴀɪʟꜱ ]───⍟</blockquote>
+<b>⍟───[ MY ᴅᴇᴛᴀɪʟꜱ ]───⍟</b>
 
-‣ ᴍʏ ɴᴀᴍᴇ : <a href="https://t.me/{}">{}</a>
+<b>‣ ᴍʏ ɴᴀᴍᴇ : <a href="https://t.me/{}">{}</a></b>
 
-‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href="tg://settings">ᴛʜɪs ᴘᴇʀsᴏɴ</a>
+<b>‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href="tg://settings">ᴛʜɪs ᴘᴇʀsᴏɴ</a></b>
 
-‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href="https://t.me/Patrick_Bateman_r">Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a>
+<b>‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href="https://t.me/Patrick_Bateman_r">Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a></b>
 
-‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href="https://koyeb.com">ᴋᴏʏᴇʙ</a>
+<b>‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href="https://koyeb.com">ᴋᴏʏᴇʙ</a></b>
 
-‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.2 [sᴛᴀʙʟᴇ]
+<b>‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ2.2 [sᴛᴀʙʟᴇ]</b>
 
-<blockquote>⍟────────────⍟</blockquote>
-</b>
+<b>⍟────────────⍟</b>
 """
 
     STREAM_TEXT = """
