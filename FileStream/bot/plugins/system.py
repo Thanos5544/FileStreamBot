@@ -3,7 +3,8 @@ import time
 import platform
 import psutil
 from pyrogram import filters
-from FileStream.bot import FileStream, StartTime
+from FileStream.bot import FileStream
+from FileStream import StartTime
 
 
 @FileStream.on_message(filters.command("system"))
