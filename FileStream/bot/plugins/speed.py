@@ -1,51 +1,53 @@
-import speedtest
 import asyncio
-from pyrogram import Client, filters
+import speedtest
+from pyrogram import filters
+from FileStream.bot import FileStream
 
 
-@Client.on_message(filters.command("speed"))
-async def speed(_, message):
+@FileStream.on_message(filters.command("speed"))
+async def speed_test(_, m):
 
-    msg = await message.reply(
-        "🚀 Speed test running... Please wait."
+    msg = await m.reply_text(
+        "🚀 Sᴘᴇᴇᴅ Tᴇsᴛ Sᴛᴀʀᴛɪɴɢ..."
     )
 
     try:
         st = speedtest.Speedtest()
-
         st.get_best_server()
 
         download = st.download() / 1024 / 1024
         upload = st.upload() / 1024 / 1024
 
-        await msg.edit(
-f"""🚀 **Server Speed Test**
+        chrome_speed = download / 8
 
-⬇️ Download Speed:
+        await msg.edit_text(
+f"""🚀 **Sᴇʀᴠᴇʀ Sᴘᴇᴇᴅ Tᴇsᴛ**
+
+⬇️ **Dᴏᴡɴʟᴏᴀᴅ Sᴘᴇᴇᴅ:**
 `{download:.2f} Mbps`
 
-⬆️ Upload Speed:
+⬆️ **Uᴘʟᴏᴀᴅ Sᴘᴇᴇᴅ:**
 `{upload:.2f} Mbps`
 
-📦 Approx Chrome Download:
-`{download/8:.2f} MB/s`
+📦 **Aᴘᴘʀᴏx Cʜʀᴏᴍᴇ Dᴏᴡɴʟᴏᴀᴅ:**
+`{chrome_speed:.2f} MB/s`
 
+⚡ **Nᴏᴛᴇ:**
+Tʜɪs ɪs sᴇʀᴠᴇʀ ɴᴇᴛᴡᴏʀᴋ sᴘᴇᴇᴅ.
 
-⚡ **Note:**
-This is the server network speed.
+Iғ Cʜʀᴏᴍᴇ Dᴏᴡɴʟᴏᴀᴅ sᴘᴇᴇᴅ ɪs sʟᴏᴡ:
+• Tʀʏ ADM Dᴏᴡɴʟᴏᴀᴅᴇʀ ғᴏʀ Bᴇᴛᴛᴇʀ Sᴘᴇᴇᴅ
+• Aᴄᴛᴜᴀʟ sᴘᴇᴇᴅ ᴅᴇᴘᴇɴᴅs ᴏɴ ɪɴᴛᴇʀɴᴇᴛ & Tᴇʟᴇɢʀᴀᴍ
 
-Actual Chrome download speed may vary depending on:
-• Your internet connection
-• Telegram speed
-• Server load
+📌 1 Mbps ≈ 0.125 MB/s"""
+        )
 
-📌 1 Mbps ≈ 0.125 MB/s
-"""
-)
+        await asyncio.sleep(30)
+        await msg.delete()
 
     except Exception as e:
-        await msg.edit(f"❌ Speed test failed\n`{e}`")
-
-
-    await asyncio.sleep(30)
-    await msg.delete()
+        await msg.edit_text(
+            f"❌ Sᴘᴇᴇᴅ Tᴇsᴛ Fᴀɪʟᴇᴅ\n\n`{e}`"
+        )
+        await asyncio.sleep(30)
+        await msg.delete()
