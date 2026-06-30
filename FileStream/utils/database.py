@@ -65,15 +65,14 @@ class Database:
     async def total_banned_users_count(self):
         count = await self.black.count_documents({})
         return count
-        
-# ---------------------[ ADD FILE TO DB ]---------------------#
-    async def add_file(self, file_info):
+        # ---------------------[ ADD FILE TO DB ]---------------------#
+async def add_file(self, file_info):
     file_info["time"] = time.time()
 
     await self.count_links(file_info["user_id"], "+")
 
     return (await self.file.insert_one(file_info)).inserted_id
-
+    
 # ---------------------[ FIND FILE IN DB ]---------------------#
     async def find_files(self, user_id, range):
         user_files=self.file.find({"user_id": user_id})
