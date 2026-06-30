@@ -93,10 +93,8 @@ async def gen_link(_id):
         stream_text = LANG.STREAM_TEXT.format(file_name, file_size, stream_link, page_link, file_link)
         reply_markup = InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("sᴛʀᴇᴀᴍ", url=page_link), InlineKeyboardButton("ᴅᴏᴡɴʟᴏᴀᴅ", url=stream_link)],
-                [InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ", url=file_link), InlineKeyboardButton("ʀᴇᴠᴏᴋᴇ ғɪʟᴇ", callback_data=f"msgdelpvt_{_id}")],
-                [InlineKeyboardButton("ᴄʟᴏsᴇ", callback_data="close")]
-            ]
+                [InlineKeyboardButton("sᴛʀᴇᴀᴍ", url=page_link), InlineKeyboardButton("ᴅᴏᴡɴʟᴏᴀᴅ", url=stream_link)]
+                
         )
     else:
         stream_text = LANG.STREAM_TEXT_X.format(file_name, file_size, stream_link, file_link)
