@@ -155,6 +155,32 @@ async def sts(c: Client, m: Message):
         text=f"**Fɪʟᴇ Dᴇʟᴇᴛᴇᴅ Sᴜᴄᴄᴇssғᴜʟʟʏ !** ",
         quote=True
     )
+    import asyncio
+import time
+from pyrogram import filters
+from pyrogram.types import Message
+from FileStream.bot import FileStream
+from FileStream.config import Telegram
+from FileStream.utils.database import Database
+
+db = Database(Telegram.DATABASE_URL, Telegram.SESSION_NAME)
+
+
+# Manual delete all files
+@FileStream.on_message(filters.command("delete") & filters.private & filters.user(Telegram.OWNER_ID))
+async def delete_all_files(_, m: Message):
+    await db.file.delete_many({})
+    await m.reply_text("✅ All files deleted from MongoDB")
+
+
+# Auto delete every 24 hours
+async def auto_delete_files():
+    while True:
+        await asyncio.sleep(86400)
+        await db.file.delete_many({})
+        
+
+asyncio.create_task(auto_delete_files())
 
 
 
