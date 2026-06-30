@@ -15,13 +15,14 @@ class LANG(object):
 <b>- sᴇɴᴅ ᴍᴇ ᴀɴʏ ᴅᴏᴄᴜᴍᴇɴᴛ ᴏʀ ᴍᴇᴅɪᴀ</b>
 <b>- ɪ'ʟʟ ᴘʀᴏᴠɪᴅᴇ sᴛʀᴇᴀᴍᴀʙʟᴇ ʟɪɴᴋ</b>\n
 <b>🔞 ᴀᴅᴜʟᴛ ᴄᴏɴᴛᴇɴᴛ sᴛʀɪᴄᴛʟʏ ᴘʀᴏʜɪʙɪᴛᴇᴅ.</b>\n
-<i><b> ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ <a href='https://telegram.me/Patrick_Bateman'>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b></i>"""
+<i><b> ʀᴇᴘᴏʀᴛ ʙᴜɢs ᴛᴏ <a href='https://telegram.me/Patrick_Bateman_r'>ᴅᴇᴠᴇʟᴏᴘᴇʀ</a></b></i>"""
 
     ABOUT_TEXT = """
 <b>‣ ᴍʏ ɴᴀᴍᴇ : {}</b>
 <b>‣ ᴍʏ ʙᴇsᴛ ғʀɪᴇɴᴅ : <a href='tg://settings'>ᴛʜɪs ᴘᴇʀsᴏɴ</a></b>
 <b>‣ ʙᴏᴛ sᴇʀᴠᴇʀ : <a href='https://koyeb.com'>ᴋᴏʏᴇʙ</a></b>
-<b>‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href='https://telegram.me/Patrick_Bateman'>Pᴀᴛʀɪᴄᴋ Bᴀᴛᴇᴍᴀɴ</a></b>\n
+<b>‣ ʙᴜɪʟᴅ sᴛᴀᴛᴜs : ᴠ1.1 [sᴛᴀʙʟᴇ]</b>
+<b>‣ ᴅᴇᴠᴇʟᴏᴘᴇʀ : <a href='https://telegram.me/Patrick_Bateman_r'>ᴘᴀᴛʀɪᴄᴋ ʙᴀᴛᴇᴍᴀɴ</a></b>\n
 """
 
     STREAM_TEXT = """
