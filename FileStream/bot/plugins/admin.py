@@ -178,15 +178,50 @@ async def clear_all_files():
     )
 
 
+import asyncio
+from pyrogram import filters
+from pyrogram.types import Message
+
+from FileStream.bot import FileStream
+from FileStream.config import Telegram
+
+
+async def clear_all_files():
+
+    # delete all files
+    await db.file.delete_many({})
+
+    # reset all users links
+    await db.col.update_many(
+        {},
+        {
+            "$set": {
+                "Links": 0
+            }
+        }
+    )
+
+
 # Manual delete all files
-@FileStream.on_message(filters.command("delete") & filters.private & filters.user(Telegram.OWNER_ID))
+@FileStream.on_message(
+    filters.command("delete")
+    & filters.private
+    & filters.user(Telegram.OWNER_ID)
+)
 async def delete_all_files(_, m: Message):
 
-    await clear_all_files()
+    try:
+        await clear_all_files()
 
-    await m.reply_text(
-        "✅ All files deleted from MongoDB\n\n🔄 All user links reset to 0"
-    )
+        await m.reply_text(
+            "✅ **Aʟʟ Fɪʟᴇs Dᴇʟᴇᴛᴇᴅ**\n\n"
+            "🔄 **Aʟʟ U sᴇʀ Lɪɴᴋs Rᴇsᴇᴛ Tᴏ 0**"
+        )
+
+    except Exception as e:
+        await m.reply_text(
+            f"❌ Error:\n`{e}`"
+        )
 
 
 # Auto delete every 24 hours
@@ -195,7 +230,10 @@ async def auto_delete_files():
     while True:
         await asyncio.sleep(86400)
 
-        await clear_all_files()
+        try:
+            await clear_all_files()
+        except Exception as e:
+            print(f"Auto delete error: {e}")
 
 
 asyncio.create_task(auto_delete_files())
