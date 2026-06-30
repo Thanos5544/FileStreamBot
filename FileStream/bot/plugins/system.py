@@ -35,7 +35,6 @@ async def system_info(_, m):
 disk_total = round(disk.total / 1024**3, 2)
 
     os = platform.system()
-
     await msg.edit_text(
 f"""**⚙️ Sʏsᴛᴇᴍ Iɴғᴏ**
 
