@@ -1,52 +1,63 @@
+import asyncio
 import time
 import platform
 import psutil
-import asyncio
-from pyrogram import Client, filters
+from pyrogram import filters
+from FileStream.bot import FileStream, StartTime
 
 
-START_TIME = time.time()
-
-
-def uptime():
-    sec = int(time.time() - START_TIME)
-    return f"{sec//3600}h {(sec%3600)//60}m {sec%60}s"
-
-
-def system_uptime():
-    sec = int(time.time() - psutil.boot_time())
-    return f"{sec//3600}h {(sec%3600)//60}m {sec%60}s"
-
-
-@Client.on_message(filters.command("system"))
-async def system(_, message):
+@FileStream.on_message(filters.command("system"))
+async def system_info(_, m):
 
     start = time.time()
 
-    ram = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
+    msg = await m.reply_text(
+        "⚡ Sʏsᴛᴇᴍ Cʜᴇᴄᴋɪɴɢ..."
+    )
 
-    latency = (time.time() - start) * 1000
+    ping = round((time.time() - start) * 1000, 2)
 
-    msg = await message.reply(
-f"""💻 **System Information**
+    uptime = int(time.time() - StartTime)
+    days = uptime // 86400
+    hours = (uptime % 86400) // 3600
+    minutes = (uptime % 3600) // 60
 
-🖥️ OS: `{platform.system()}`
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    disk = psutil.disk_usage('/').percent
 
-⏰ Bot Uptime: `{uptime()}`
+    os = platform.system()
+    release = platform.release()
 
-🔄 System Uptime: `{system_uptime()}`
+    await msg.edit_text(
+f"""⚙️ **Sʏsᴛᴇᴍ Iɴғᴏ**
 
-💾 RAM Usage:
-`{ram.used/1024/1024:.2f} MB / {ram.total/1024/1024:.2f} MB`
+🐧 **OS:**
+`{os} {release}`
 
-📁 Disk Usage:
-`{disk.used/1024/1024/1024:.2f} GB / {disk.total/1024/1024/1024:.2f} GB`
+🏓 **Pɪɴɢ:**
+`{ping} ms`
 
-📶 Latency:
-`{latency:.3f} ms`
-"""
-)
+⏱️ **Uᴘᴛɪᴍᴇ:**
+`{days}d {hours}h {minutes}m`
+
+🖥️ **CPU:**
+`{cpu}%`
+
+💾 **RAM:**
+`{ram}%`
+
+📦 **Dɪsᴋ:**
+`{disk}%`
+
+🚀 **Sᴛᴀᴛᴜs:**
+`Oɴʟɪɴᴇ`
+
+⚡ **Nᴏᴛᴇ:**
+Lᴏᴡ Pɪɴɢ = Fᴀsᴛ Rᴇsᴘᴏɴsᴇ
+
+Sᴇʀᴠᴇʀ Rᴜɴɴɪɴɢ Sᴍᴏᴏᴛʜʟʏ 🔥"""
+    )
 
     await asyncio.sleep(30)
     await msg.delete()
