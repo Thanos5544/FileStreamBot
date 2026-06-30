@@ -94,8 +94,8 @@ async def gen_link(_id):
         reply_markup = InlineKeyboardMarkup(
     [
         [
-            InlineKeyboardButton("sᴛʀᴇᴀᴍ", url=page_link),
-            InlineKeyboardButton("ᴅᴏᴡɴʟᴏᴀᴅ", url=stream_link)
+            InlineKeyboardButton("Sᴛʀᴇᴀᴍ ⚡", url=page_link),
+            InlineKeyboardButton("Dᴏᴡɴʟᴏᴀᴅ 📥", url=stream_link)
         ]
     ]
         )
