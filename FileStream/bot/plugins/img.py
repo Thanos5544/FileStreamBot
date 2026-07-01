@@ -28,7 +28,6 @@ async def img(client, message):
             search_name = name
 
         async with aiohttp.ClientSession() as session:
-            # multi की जगह ज़्यादा सटीक रिस्पॉन्स के लिए multi सर्च ही रखें पर फ़िल्टर करें
             search_url = (
                 "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={search_name}"
@@ -38,7 +37,6 @@ async def img(client, message):
                 search = await resp.json()
 
             results = search.get("results", [])
-            # सिर्फ़ मूवी या टीवी शो रखें (person हटा दें)
             results = [r for r in results if r.get("media_type") in ["movie", "tv"]]
 
             if not results:
@@ -65,7 +63,7 @@ async def img(client, message):
             async with session.get(image_url) as resp:
                 data = await resp.json()
 
-        # डुप्लीकेट हटाने के लिए Set का इस्तेमाल
+        # इमेजेस कलेक्ट करना
         images = []
 
         if movie.get("poster_path"):
@@ -74,10 +72,10 @@ async def img(client, message):
         if movie.get("backdrop_path"):
             images.append(f"https://image.tmdb.org/t/p/original{movie['backdrop_path']}")
 
-        for x in data.get("backdrops", [])[:25]:
+        for x in data.get("backdrops", []):
             images.append(f"https://image.tmdb.org/t/p/original{x['file_path']}")
 
-        # यूनिक इमेजेस निकालना
+        # यूनिक इमेजेस निकालना (अधिकतम 20)
         unique_images = list(dict.fromkeys(images))[:20]
 
         if not unique_images:
@@ -87,12 +85,14 @@ async def img(client, message):
         for i in range(0, len(unique_images), 10):
             album = []
             for img_url in unique_images[i:i+10]:
-                album.append(InputMediaPhoto(img_url))
+                # Pyrogram v2+ में 'media' कीवर्ड का इस्तेमाल करना ज़रूरी है
+                album.append(InputMediaPhoto(media=img_url))
             
-            await message.reply_media_group(album)
+            # reply_media_group की जगह message.reply_media_group सुरक्षित तरीका है
+            await message.reply_media_group(media=album)
 
         await msg.delete()
 
     except Exception as e:
         await msg.edit(f"❌ RESULT ERROR\n\n{e}")
-            
+        
