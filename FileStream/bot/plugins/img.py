@@ -1,11 +1,14 @@
-from pyrogram import Client, filters
-from pyrogram.types import InputMediaPhoto
 import aiohttp
 import re
 import asyncio
+from pyrogram import Client, filters
+from pyrogram.types import InputMediaPhoto
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
+
+TMDB_BASE = "https://api.themoviedb.org/3"
+TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -37,7 +40,7 @@ async def img(client, message):
         async with aiohttp.ClientSession() as session:
 
             search_url = (
-                "https://api.themoviedb.org/3/search/multi"
+                f"{TMDB_BASE}/search/multi"
                 f"?api_key={TMDB_API}&query={search_name}"
             )
 
@@ -47,7 +50,7 @@ async def img(client, message):
 
             results = [
                 x for x in search.get("results", [])
-                if x.get("media_type") in ["movie","tv"]
+                if x.get("media_type") in ["movie", "tv"]
             ]
 
 
@@ -64,18 +67,18 @@ async def img(client, message):
                         x.get("release_date")
                         or x.get("first_air_date")
                     )
+
                     if date and date.startswith(year):
                         movie = x
                         break
 
 
-            media_type = movie.get("media_type","movie")
+            media_type = movie.get("media_type", "movie")
             movie_id = movie["id"]
 
 
             image_url = (
-                f"https://api.themoviedb.org/3/"
-                f"{media_type}/{movie_id}/images"
+                f"{TMDB_BASE}/{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
@@ -88,29 +91,55 @@ async def img(client, message):
         images = []
 
 
-        # same old style
-        if movie.get("poster_path"):
-            images.append(
-                "https://image.tmdb.org/t/p/original"
-                + movie["poster_path"]
-            )
+        # English / Original posters first
+        for x in data.get("posters", []):
+
+            lang = x.get("iso_639_1")
+
+            if lang in [None, "en"]:
+
+                images.append(
+                    TMDB_IMG + x["file_path"]
+                )
 
 
-        if movie.get("backdrop_path"):
-            images.append(
-                "https://image.tmdb.org/t/p/original"
-                + movie["backdrop_path"]
-            )
+            if len(images) >= 15:
+                break
 
 
+
+        # Hindi posters after
+        for x in data.get("posters", []):
+
+            if x.get("iso_639_1") == "hi":
+
+                images.append(
+                    TMDB_IMG + x["file_path"]
+                )
+
+
+            if len(images) >= 18:
+                break
+
+
+
+        # Backdrops
         for x in data.get("backdrops", []):
+
             images.append(
-                "https://image.tmdb.org/t/p/original"
-                + x["file_path"]
+                TMDB_IMG + x["file_path"]
             )
+
+            if len(images) >= 20:
+                break
+
 
 
         images = list(dict.fromkeys(images))[:20]
+
+
+        if not images:
+            return await msg.edit("❌ No images found")
 
 
         await msg.edit(
@@ -122,13 +151,15 @@ async def img(client, message):
 
             album = []
 
-            for img in images[i:i+10]:
+            for pic in images[i:i+10]:
+
                 album.append(
-                    InputMediaPhoto(media=img)
+                    InputMediaPhoto(media=pic)
                 )
 
 
             try:
+
                 await client.send_media_group(
                     chat_id=message.chat.id,
                     media=album,
@@ -142,9 +173,20 @@ async def img(client, message):
             await asyncio.sleep(1)
 
 
+
+        await message.reply_text(
+            "© Source: @Patrick_Botz"
+        )
+
+
         await msg.delete()
 
 
     except Exception as e:
-        print(e)
-        await msg.delete()
+
+        print("IMG ERROR:", e)
+
+        try:
+            await msg.delete()
+        except:
+            pass
