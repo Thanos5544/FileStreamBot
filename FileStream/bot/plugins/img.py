@@ -23,137 +23,128 @@ async def img(_, message):
 
     name = " ".join(message.command[1:])
 
-
     msg = await message.reply_text(
         "🔎 Searching..."
     )
 
+    try:
+        async with aiohttp.ClientSession() as session:
 
-    async with aiohttp.ClientSession() as session:
+            url = (
+                "https://api.themoviedb.org/3/search/multi"
+                f"?api_key={TMDB_API}&query={name}"
+            )
 
-        url = (
-            "https://api.themoviedb.org/3/search/movie"
-            f"?api_key={TMDB_API}&query={name}"
-        )
-
-        async with session.get(url) as r:
-            data = await r.json()
-
-
-        if not data.get("results"):
-            return await msg.edit("❌ Movie not found")
+            async with session.get(url) as resp:
+                data = await resp.json()
 
 
-        movie = data["results"][0]
-        movie_id = movie["id"]
+        results = data.get("results", [])[:5]
+
+        if not results:
+            return await msg.edit("❌ Not Found")
 
 
-    buttons = InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "🖼 Posters",
-                    callback_data=f"imgpost:{movie_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🌄 Backdrops",
-                    callback_data=f"imgback:{movie_id}"
-                )
-            ]
-        ]
-    )
+        buttons = []
+
+        for item in results:
+
+            title = item.get("title") or item.get("name")
+
+            year = (
+                item.get("release_date")
+                or item.get("first_air_date")
+                or ""
+            )[:4]
+
+            typ = item.get("media_type")
+
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        f"🎬 {title} {year}",
+                        callback_data=f"img:{typ}:{item['id']}"
+                    )
+                ]
+            )
 
 
-    await msg.edit(
-        f"🎬 **{movie.get('title')}**\n\nChoose Image Type 👇",
-        reply_markup=buttons
-    )
-
-
-
-async def get_images(movie_id):
-
-    async with aiohttp.ClientSession() as session:
-
-        url = (
-            f"https://api.themoviedb.org/3/movie/{movie_id}/images"
-            f"?api_key={TMDB_API}"
-        )
-
-        async with session.get(url) as r:
-            data = await r.json()
-
-
-    imgs = []
-
-
-    for p in data.get("posters", [])[:20]:
-        imgs.append(
-            "https://image.tmdb.org/t/p/original"
-            + p["file_path"]
+        await msg.edit(
+            "👇 Select:",
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
 
 
-    return imgs
-
-
-
-@FileStream.on_callback_query(filters.regex(r"^imgpost:"))
-async def poster(_, query):
-
-    movie_id = query.data.split(":")[1]
-
-    await query.answer("Fetching Posters...")
-
-
-    imgs = await get_images(movie_id)
-
-
-    media = [
-        InputMediaPhoto(x)
-        for x in imgs[:10]
-    ]
-
-
-    await query.message.reply_media_group(media)
-
-
-
-@FileStream.on_callback_query(filters.regex(r"^imgback:"))
-async def backdrops(_, query):
-
-    movie_id = query.data.split(":")[1]
-
-    await query.answer("Fetching Backdrops...")
-
-
-    async with aiohttp.ClientSession() as session:
-
-        url = (
-            f"https://api.themoviedb.org/3/movie/{movie_id}/images"
-            f"?api_key={TMDB_API}"
-        )
-
-        async with session.get(url) as r:
-            data = await r.json()
-
-
-    imgs = []
-
-    for p in data.get("backdrops", [])[:20]:
-
-        imgs.append(
-            "https://image.tmdb.org/t/p/original"
-            + p["file_path"]
+    except Exception as e:
+        await msg.edit(
+            f"❌ Search Error\n{e}"
         )
 
 
-    media = [
-        InputMediaPhoto(x)
-        for x in imgs[:10]
-    ]
+
+@FileStream.on_callback_query(filters.regex(r"^img:"))
+async def send_images(_, query):
+
+    _, typ, mid = query.data.split(":")
+
+    await query.answer("📸 Fetching HD Images...")
 
 
-    await query.message.reply_media_group(media)
+    try:
+
+        async with aiohttp.ClientSession() as session:
+
+            url = (
+                f"https://api.themoviedb.org/3/{typ}/{mid}/images"
+                f"?api_key={TMDB_API}"
+            )
+
+            async with session.get(url) as resp:
+                data = await resp.json()
+
+
+        pics = []
+
+
+        for x in data.get("posters", [])[:10]:
+
+            pics.append(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
+            )
+
+
+        for x in data.get("backdrops", [])[:10]:
+
+            pics.append(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
+            )
+
+
+        pics = list(dict.fromkeys(pics))
+
+
+        if not pics:
+            return await query.message.edit(
+                "❌ Images not found"
+            )
+
+
+        for i in range(0, len(pics), 10):
+
+            await query.message.reply_media_group(
+                [
+                    InputMediaPhoto(x)
+                    for x in pics[i:i+10]
+                ]
+            )
+
+
+        await query.message.delete()
+
+
+    except Exception as e:
+        await query.message.edit(
+            f"❌ Image Error\n{e}"
+        )
