@@ -1,88 +1,138 @@
 import aiohttp
 
 from pyrogram import filters
-from pyrogram.types import InputMediaPhoto
+from pyrogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 
 from FileStream.bot import FileStream
 
 
-ACCESS_KEY = "99JuNaSj-p9GZio8IAUtXTpsk_ySalCFrJ1GxU0EvtM"
+TMDB_API = "18303910643c603ebb9e370f2f49db56"
 
 
 @FileStream.on_message(filters.command("img"))
-async def img_search(_, m):
+async def search_movie(_, m):
 
     if len(m.command) < 2:
         return await m.reply_text(
-            "❌ USE:\n\n/img movie name"
+            "❌ Use:\n/img movie name"
         )
 
-    query = " ".join(m.command[1:])
-
+    name = " ".join(m.command[1:])
 
     msg = await m.reply_text(
-        "⬆️ Uploading 20 images to Telegram..."
+        "🔎 Searching..."
     )
 
 
-    try:
+    async with aiohttp.ClientSession() as s:
 
         url = (
-            "https://api.unsplash.com/search/photos"
-            f"?query={query}"
-            "&per_page=20"
-            f"&client_id={ACCESS_KEY}"
+        "https://api.themoviedb.org/3/search/multi"
+        f"?api_key={TMDB_API}&query={name}"
+        )
+
+        async with s.get(url) as r:
+            data = await r.json()
+
+
+    buttons=[]
+
+
+    for item in data.get("results", [])[:10]:
+
+        title = (
+        item.get("title")
+        or
+        item.get("name")
         )
 
 
-        async with aiohttp.ClientSession() as session:
-
-            async with session.get(url) as resp:
-
-                data = await resp.json()
+        media = item.get("media_type")
 
 
-        results = data.get("results", [])
+        if media not in ["movie","tv"]:
+            continue
 
 
-        if not results:
-
-            return await msg.edit_text(
-                "❌ No Images Found"
-            )
-
-
-        media = []
-
-
-        for item in results[:20]:
-
-            photo = item["urls"]["regular"]
-
-            media.append(
-                InputMediaPhoto(photo)
-            )
+        buttons.append(
+        [
+        InlineKeyboardButton(
+            title,
+            callback_data=f"poster#{item['id']}#{media}"
+        )
+        ])
 
 
-        await m.reply_media_group(media)
-
-
-        await m.reply_text(
-f"""
-🖼 **IMAGES FOR:** `{query}`
-
-• SOURCE: Unsplash
-"""
+    if not buttons:
+        return await msg.edit(
+            "❌ No Result Found"
         )
 
 
-        await msg.delete()
+    await msg.edit(
+        "🎬 **Select Movie / Series**",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
-    except Exception as e:
 
-        print(e)
 
-        await msg.edit_text(
-            "❌ RESULT ERROR"
+
+@FileStream.on_callback_query(filters.regex("^poster#"))
+async def poster(_, q):
+
+    _, movie_id, typ = q.data.split("#")
+
+
+    async with aiohttp.ClientSession() as s:
+
+        url = (
+        f"https://api.themoviedb.org/3/{typ}/{movie_id}/images"
+        f"?api_key={TMDB_API}"
+        )
+
+        async with s.get(url) as r:
+            data = await r.json()
+
+
+    buttons=[]
+
+
+    for i, poster in enumerate(
+        data.get("posters",[])[:10],
+        1
+    ):
+
+        link = (
+        "https://image.tmdb.org/t/p/original"
+        +
+        poster["file_path"]
+        )
+
+
+        buttons.append(
+        [
+        InlineKeyboardButton(
+            f"{i}. Click Here",
+            url=link
+        )
+        ])
+
+
+
+    if not buttons:
+        return await q.answer(
+            "❌ Poster not found",
+            show_alert=True
+        )
+
+
+    await q.message.edit(
+        "📦 **Available Posters**\n\n"
+        "🖼 **Posters:**\n\n"
+        "👇 Choose Poster",
+        reply_markup=InlineKeyboardMarkup(buttons)
         )
