@@ -1,56 +1,53 @@
 from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto
 import aiohttp
-import asyncio
 import re
-import io
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-IMG = "https://image.tmdb.org/t/p/original"
-
-
-async def download_image(session, url):
-    async with session.get(url) as r:
-        return io.BytesIO(await r.read())
 
 
 @Client.on_message(filters.command("img"))
 async def img(client, message):
 
     if len(message.command) < 2:
-        return await message.reply_text("❌ Use:\n/img name year")
+        return await message.reply_text(
+            "❌ Use:\n/img movie name year"
+        )
 
-    query = " ".join(message.command[1:])
+    name = " ".join(message.command[1:])
+
 
     year = None
-    match = re.search(r"(19|20)\d{2}", query)
+    match = re.search(r"(19|20)\d{2}", name)
 
     if match:
         year = match.group()
-        query = query.replace(year, "").strip()
+        name = name.replace(year, "").strip()
 
 
-    status = await message.reply_text(
-        "⬆️ Uᴘʟᴏᴀᴅɪɴɢ 20 ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+    msg = await message.reply_text(
+        "🔎 Fetching HD Images..."
     )
 
 
     try:
         async with aiohttp.ClientSession() as session:
 
-            url = (
+            search_url = (
                 "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={query}"
+                f"?api_key={TMDB_API}&query={name}"
             )
 
-            async with session.get(url) as r:
-                data = await r.json()
+
+            async with session.get(search_url) as resp:
+                search = await resp.json()
 
 
-            results = data.get("results", [])
+            results = search.get("results", [])
 
 
+            # year filter
             if year:
                 results = [
                     x for x in results
@@ -62,77 +59,94 @@ async def img(client, message):
 
 
             if not results:
-                return await status.edit("❌ Not Found")
+                return await msg.edit("❌ Not found")
 
 
-            item = results[0]
-            media_type = item.get("media_type","movie")
-            mid = item["id"]
+            movie = results[0]
+
+            media_type = movie.get("media_type", "movie")
+            movie_id = movie["id"]
 
 
-            img_api = (
+            image_url = (
                 f"https://api.themoviedb.org/3/"
-                f"{media_type}/{mid}/images"
+                f"{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
-            async with session.get(img_api) as r:
-                imgs = await r.json()
+
+            async with session.get(image_url) as resp:
+                data = await resp.json()
 
 
-            photos = []
 
-            if item.get("poster_path"):
-                photos.append(IMG + item["poster_path"])
+        base = "https://image.tmdb.org/t/p/original"
 
 
-            for x in imgs.get("backdrops", []):
-                photos.append(IMG + x["file_path"])
+        images = []
 
 
-            photos = list(dict.fromkeys(photos))[:20]
-
-
-            if not photos:
-                return await status.edit("❌ Images Not Found")
-
-
-            await status.delete()
-
-
-            title = (
-                item.get("title")
-                or item.get("name")
-                or query
+        if movie.get("poster_path"):
+            images.append(
+                base + movie["poster_path"]
             )
 
 
-            caption = (
-                f"🖼 Iᴍᴀɢᴇs ғᴏʀ: {title}\n\n"
-                "◍ Sᴏᴜʀᴄᴇ: @Patrick_Botz"
+        if movie.get("backdrop_path"):
+            images.append(
+                base + movie["backdrop_path"]
             )
 
 
-            for i in range(0, len(photos), 10):
+        for x in data.get("backdrops", []):
+            images.append(
+                base + x["file_path"]
+            )
 
-                album = []
 
-                for p in photos[i:i+10]:
-                    img = await download_image(session, p)
-                    img.seek(0)
+        # remove duplicate + max 20
+        images = list(dict.fromkeys(images))[:20]
 
-                    album.append(
-                        InputMediaPhoto(
-                            img,
-                            caption=caption if i == 0 and len(album)==0 else None
-                        )
+
+        if not images:
+            return await msg.edit("❌ Images not found")
+
+
+        await msg.edit(
+            "⬆️ Uᴘʟᴏᴀᴅɪɴɢ 20 ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+        )
+
+
+        title = movie.get("title") or movie.get("name") or name
+
+
+        caption = (
+            f"🖼 Iᴍᴀɢᴇs ғᴏʀ: {title}\n\n"
+            "◍ Sᴏᴜʀᴄᴇ: @Patrick_Botz"
+        )
+
+
+        for i in range(0, len(images), 10):
+
+            album = []
+
+            for img in images[i:i+10]:
+
+                album.append(
+                    InputMediaPhoto(
+                        img,
+                        caption=caption if i == 0 and len(album) == 0 else None
                     )
+                )
 
 
-                await message.reply_media_group(album)
+            await message.reply_media_group(album)
 
-                await asyncio.sleep(1)
+
+        await msg.delete()
 
 
     except Exception as e:
-        await status.edit(f"❌ ERROR\n{e}")
+        await msg.edit(
+            f"❌ RESULT ERROR\n\n{e}"
+        )
