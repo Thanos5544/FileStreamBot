@@ -8,8 +8,8 @@ dnspython
 requests
 jinja2
 psutil
-yt-dlp
 pillow
 pyrogram
-ffmpeg-python
 tgcrypto
+yt-dlp
+ffmpeg-python
