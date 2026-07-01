@@ -1,13 +1,9 @@
-from pyrogram import Client, filters
-from pyrogram.types import InputMediaPhoto
 import aiohttp
 import re
-import asyncio
-
+from pyrogram import Client, filters
+from pyrogram.types import InputMediaPhoto
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-IMG = "https://image.tmdb.org/t/p/original"
-
 
 @Client.on_message(filters.command("img"))
 async def img(client, message):
@@ -18,134 +14,85 @@ async def img(client, message):
         )
 
     name = " ".join(message.command[1:])
-
-    msg = await message.reply_text(
-        "🔎 Fetching HD Images..."
-    )
+    msg = await message.reply_text("🔎 Fetching HD Images...")
 
     try:
-
+        # Year extract करना
         year = None
         match = re.search(r"(19|20)\d{2}", name)
 
         if match:
             year = match.group()
-            clean = name.replace(year, "").strip()
+            search_name = name.replace(year, "").strip()
         else:
-            clean = name
-
+            search_name = name
 
         async with aiohttp.ClientSession() as session:
-
+            # multi की जगह ज़्यादा सटीक रिस्पॉन्स के लिए multi सर्च ही रखें पर फ़िल्टर करें
             search_url = (
                 "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={clean}"
+                f"?api_key={TMDB_API}&query={search_name}"
             )
 
             async with session.get(search_url) as resp:
                 search = await resp.json()
 
-
             results = search.get("results", [])
-
-
-            if year:
-                for r in results:
-                    date = r.get("release_date") or r.get("first_air_date")
-
-                    if date and date.startswith(year):
-                        results = [r]
-                        break
-
+            # सिर्फ़ मूवी या टीवी शो रखें (person हटा दें)
+            results = [r for r in results if r.get("media_type") in ["movie", "tv"]]
 
             if not results:
-                return await msg.edit("❌ Not Found")
+                return await msg.edit("❌ Not found")
 
-
+            # Year matching लॉजिक
             movie = results[0]
+            if year:
+                for item in results:
+                    date = item.get("release_date") or item.get("first_air_date")
+                    if date and date.startswith(year):
+                        movie = item
+                        break
 
-            media_type = movie.get("media_type", "movie")
-            movie_id = movie["id"]
+            media_type = movie.get("media_type")
+            movie_id = movie.get("id")
 
-
+            # इमेजेस फेच करना
             image_url = (
-                f"https://api.themoviedb.org/3/"
-                f"{media_type}/{movie_id}/images"
+                f"https://api.themoviedb.org/3/{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
-
 
             async with session.get(image_url) as resp:
                 data = await resp.json()
 
-
-
+        # डुप्लीकेट हटाने के लिए Set का इस्तेमाल
         images = []
 
-
-        # poster first
-        for x in data.get("posters", []):
-
-            images.append(
-                IMG + x["file_path"]
-            )
-
-
-        # backdrop
-        for x in data.get("backdrops", []):
-
-            images.append(
-                IMG + x["file_path"]
-            )
-
-
-        # old support
         if movie.get("poster_path"):
-            images.insert(
-                0,
-                IMG + movie["poster_path"]
-            )
+            images.append(f"https://image.tmdb.org/t/p/original{movie['poster_path']}")
 
+        if movie.get("backdrop_path"):
+            images.append(f"https://image.tmdb.org/t/p/original{movie['backdrop_path']}")
 
-        images = list(dict.fromkeys(images))[:20]
+        for x in data.get("backdrops", [])[:25]:
+            images.append(f"https://image.tmdb.org/t/p/original{x['file_path']}")
 
+        # यूनिक इमेजेस निकालना
+        unique_images = list(dict.fromkeys(images))[:20]
 
-        await msg.edit(
-            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(images)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
-        )
+        if not unique_images:
+            return await msg.edit("❌ No images found for this title.")
 
-
-        for i in range(0, len(images), 10):
-
+        # 10-10 के ग्रुप में भेजना
+        for i in range(0, len(unique_images), 10):
             album = []
-
-            for pic in images[i:i+10]:
-                album.append(
-                    InputMediaPhoto(pic)
-                )
-
+            for img_url in unique_images[i:i+10]:
+                album.append(InputMediaPhoto(img_url))
+            
             await message.reply_media_group(album)
-
-            await asyncio.sleep(1)
-
-
-
-        title = movie.get("title") or movie.get("name")
-
-        await message.reply_text(
-            f"🖼 <b>IMAGES FOR:</b> {title}\n\n"
-            f"• Source: @Patrick_Botz",
-            parse_mode="html"
-        )
-
 
         await msg.delete()
 
-
     except Exception as e:
-        print("IMG ERROR:", e)
-
-        try:
-            await msg.delete()
-        except:
-            pass
+        await msg.edit(f"❌ RESULT ERROR\n\n{e}")
+            
