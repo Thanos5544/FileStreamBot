@@ -5,7 +5,7 @@ import asyncio
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-IMG = "https://image.tmdb.org/t/p/original"
+TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -13,130 +13,132 @@ async def img(client, message):
 
     if len(message.command) < 2:
         return await message.reply_text(
-            "❌ Use:\n/img movie name year"
+            "❌ Use:\n/img movie name"
         )
 
     name = " ".join(message.command[1:])
 
     msg = await message.reply_text(
-        "🔎 Fetching HD Images..."
+        "🔎 Fetching HD Posters..."
     )
 
     try:
 
         async with aiohttp.ClientSession() as session:
 
-            # search with year support
             search_url = (
                 "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={name}&include_adult=false"
+                f"?api_key={TMDB_API}&query={name}"
             )
 
             async with session.get(search_url) as r:
                 search = await r.json()
 
 
-            if not search.get("results"):
-                return await msg.edit("❌ Not Found")
+            results = search.get("results", [])
+
+            if not results:
+                await msg.edit("❌ Not Found")
+                return
 
 
-            result = search["results"][0]
+            item = results[0]
 
-            media_type = result.get("media_type")
+            media_type = item.get(
+                "media_type",
+                "movie"
+            )
 
-            if media_type not in ["movie", "tv"]:
-                media_type = "movie"
+            media_id = item["id"]
 
 
-            mid = result["id"]
-
-
-            img_url = (
+            images_url = (
                 f"https://api.themoviedb.org/3/"
-                f"{media_type}/{mid}/images"
+                f"{media_type}/{media_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
 
-            async with session.get(img_url) as r:
-                images_data = await r.json()
+            async with session.get(images_url) as r:
+                data = await r.json()
 
 
 
-        pics = []
+        posters = []
+        backdrops = []
 
 
-        # main poster
-        if result.get("poster_path"):
-            pics.append(
-                IMG + result["poster_path"]
+        # Main poster
+        if item.get("poster_path"):
+            posters.append(
+                TMDB_IMG + item["poster_path"]
             )
 
 
-        # main backdrop
-        if result.get("backdrop_path"):
-            pics.append(
-                IMG + result["backdrop_path"]
+        # All posters
+        for p in data.get("posters", []):
+
+            url = TMDB_IMG + p["file_path"]
+
+            if url not in posters:
+                posters.append(url)
+
+
+
+        # Backdrops
+        for b in data.get("backdrops", []):
+
+            url = TMDB_IMG + b["file_path"]
+
+            if url not in backdrops:
+                backdrops.append(url)
+
+
+
+        images = posters + backdrops
+
+
+        if not images:
+            await msg.edit(
+                "❌ No Images Found"
             )
+            return
 
-
-        # all posters
-        for p in images_data.get("posters", []):
-            pics.append(
-                IMG + p["file_path"]
-            )
-
-
-        # all backdrops
-        for b in images_data.get("backdrops", []):
-            pics.append(
-                IMG + b["file_path"]
-            )
-
-
-        # remove duplicate
-        pics = list(dict.fromkeys(pics))[:20]
-
-
-        if not pics:
-            return await msg.edit(
-                "❌ Images not found"
-            )
 
 
         await msg.edit(
-            "⬆️ Uᴘʟᴏᴀᴅɪɴɢ 20 ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(images)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
         )
 
 
-        for i in range(0, len(pics), 10):
+
+        # Telegram max 10 photos per album
+        for i in range(0, len(images), 10):
 
             album = []
 
-            for pic in pics[i:i+10]:
+            for pic in images[i:i+10]:
                 album.append(
                     InputMediaPhoto(pic)
                 )
 
 
-            await message.reply_media_group(
-                album
-            )
+            await message.reply_media_group(album)
 
-
+            # avoid flood
             await asyncio.sleep(3)
 
-
-        await message.reply_text(
-            "🖼️ Source: @Patrick_Botz"
-        )
 
 
         await msg.delete()
 
 
+
     except Exception as e:
 
-        await msg.edit(
-            f"❌ RESULT ERROR\n\n{e}"
-        )
+        print("IMG ERROR:", e)
+
+        try:
+            await msg.delete()
+        except:
+            pass
