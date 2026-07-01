@@ -1,20 +1,14 @@
-from FileStream.bot import FileStream
-
-from pyrogram import filters
-from pyrogram.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    InputMediaPhoto
-)
-
+from pyrogram import Client, filters
+from pyrogram.types import InputMediaPhoto
 import aiohttp
+import re
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
 
 
-@FileStream.on_message(filters.command("img"))
-async def img(_, message):
+@Client.on_message(filters.command("img"))
+async def img(client, message):
 
     if len(message.command) < 2:
         return await message.reply_text(
@@ -24,127 +18,111 @@ async def img(_, message):
     name = " ".join(message.command[1:])
 
     msg = await message.reply_text(
-        "🔎 Searching..."
+        "🔎 Fetching HD Images..."
     )
 
     try:
+        year = None
+
+        m = re.search(r"(19|20)\d{2}", name)
+
+        if m:
+            year = m.group()
+            name = name.replace(year, "").strip()
+
+
         async with aiohttp.ClientSession() as session:
 
-            url = (
+            search_url = (
                 "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={name}"
             )
 
-            async with session.get(url) as resp:
-                data = await resp.json()
+            async with session.get(search_url) as resp:
+                search = await resp.json()
 
 
-        results = data.get("results", [])[:5]
+            results = search.get("results", [])
 
-        if not results:
-            return await msg.edit("❌ Not Found")
-
-
-        buttons = []
-
-        for item in results:
-
-            title = item.get("title") or item.get("name")
-
-            year = (
-                item.get("release_date")
-                or item.get("first_air_date")
-                or ""
-            )[:4]
-
-            typ = item.get("media_type")
-
-            buttons.append(
-                [
-                    InlineKeyboardButton(
-                        f"🎬 {title} {year}",
-                        callback_data=f"img:{typ}:{item['id']}"
+            if year:
+                results = [
+                    x for x in results
+                    if (
+                        x.get("release_date", "")[:4] == year
+                        or
+                        x.get("first_air_date", "")[:4] == year
                     )
                 ]
+
+
+            if not results:
+                return await msg.edit("❌ Not found")
+
+
+            item = results[0]
+
+            media_type = item.get(
+                "media_type",
+                "movie"
             )
 
-
-        await msg.edit(
-            "👇 Select:",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            item_id = item["id"]
 
 
-    except Exception as e:
-        await msg.edit(
-            f"❌ Search Error\n{e}"
-        )
-
-
-
-@FileStream.on_callback_query(filters.regex(r"^img:"))
-async def send_images(_, query):
-
-    _, typ, mid = query.data.split(":")
-
-    await query.answer("📸 Fetching HD Images...")
-
-
-    try:
-
-        async with aiohttp.ClientSession() as session:
-
-            url = (
-                f"https://api.themoviedb.org/3/{typ}/{mid}/images"
+            image_url = (
+                f"https://api.themoviedb.org/3/"
+                f"{media_type}/{item_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
-            async with session.get(url) as resp:
+
+            async with session.get(image_url) as resp:
                 data = await resp.json()
 
 
-        pics = []
+
+        images = []
 
 
         for x in data.get("posters", [])[:10]:
 
-            pics.append(
+            images.append(
                 "https://image.tmdb.org/t/p/original"
                 + x["file_path"]
             )
 
 
-        for x in data.get("backdrops", [])[:10]:
+        for x in data.get("backdrops", [])[:15]:
 
-            pics.append(
+            images.append(
                 "https://image.tmdb.org/t/p/original"
                 + x["file_path"]
             )
 
 
-        pics = list(dict.fromkeys(pics))
+        images = list(dict.fromkeys(images))[:20]
 
 
-        if not pics:
-            return await query.message.edit(
+        if not images:
+            return await msg.edit(
                 "❌ Images not found"
             )
 
 
-        for i in range(0, len(pics), 10):
+        for i in range(0, len(images), 10):
 
-            await query.message.reply_media_group(
+            await message.reply_media_group(
                 [
                     InputMediaPhoto(x)
-                    for x in pics[i:i+10]
+                    for x in images[i:i+10]
                 ]
             )
 
 
-        await query.message.delete()
+        await msg.delete()
 
 
     except Exception as e:
-        await query.message.edit(
-            f"❌ Image Error\n{e}"
+        await msg.edit(
+            f"❌ RESULT ERROR\n\n{e}"
         )
