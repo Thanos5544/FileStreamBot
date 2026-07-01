@@ -50,6 +50,7 @@ async def img(client, message):
                 if x.get("media_type") in ["movie","tv"]
             ]
 
+
             if not results:
                 return await msg.edit("❌ Not found")
 
@@ -63,7 +64,6 @@ async def img(client, message):
                         x.get("release_date")
                         or x.get("first_air_date")
                     )
-
                     if date and date.startswith(year):
                         movie = x
                         break
@@ -76,8 +76,7 @@ async def img(client, message):
             image_url = (
                 f"https://api.themoviedb.org/3/"
                 f"{media_type}/{movie_id}/images"
-                f"?include_image_language=en,null,hi"
-                f"&api_key={TMDB_API}"
+                f"?api_key={TMDB_API}"
             )
 
 
@@ -103,18 +102,6 @@ async def img(client, message):
             )
 
 
-        # only clean posters
-        for x in data.get("posters", []):
-
-            if x.get("iso_639_1") in ["en", None]:
-
-                images.append(
-                    "https://image.tmdb.org/t/p/original"
-                    + x["file_path"]
-                )
-
-
-        # backdrops
         for x in data.get("backdrops", []):
 
             if x.get("file_path"):
@@ -125,7 +112,8 @@ async def img(client, message):
                 )
 
 
-        images = list(dict.fromkeys(images))[:20]
+        # 30 images
+        images = list(dict.fromkeys(images))[:30]
 
 
         await msg.edit(
@@ -140,27 +128,36 @@ async def img(client, message):
 
             album = []
 
+
             for img in images[i:i+10]:
+
                 album.append(
-                    InputMediaPhoto(media=img)
+                    InputMediaPhoto(
+                        media=img
+                    )
                 )
 
 
             if first:
+
                 album[0].caption = (
                     f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
                     f"• <b>SOURCE:</b> @Patrick_BotZ"
                 )
+
                 album[0].parse_mode = "html"
+
                 first = False
 
 
             try:
+
                 await client.send_media_group(
                     chat_id=message.chat.id,
                     media=album,
                     reply_to_message_id=message.id
                 )
+
 
             except Exception as e:
                 print("MEDIA ERROR:", e)
@@ -173,5 +170,7 @@ async def img(client, message):
 
 
     except Exception as e:
+
         print(e)
+
         await msg.delete()
