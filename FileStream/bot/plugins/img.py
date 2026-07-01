@@ -5,6 +5,7 @@ import asyncio
 import re
 import io
 
+
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
 IMG = "https://image.tmdb.org/t/p/original"
 
@@ -29,77 +30,109 @@ async def img(client, message):
         year = match.group()
         query = query.replace(year, "").strip()
 
-    wait = await message.reply_text("🔎 Fetching HD Images...")
+
+    status = await message.reply_text(
+        "⬆️ Uᴘʟᴏᴀᴅɪɴɢ 20 ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+    )
+
 
     try:
         async with aiohttp.ClientSession() as session:
 
-            # search movie / series
-            search_url = (
+            url = (
                 "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={query}"
             )
 
-            async with session.get(search_url) as r:
+            async with session.get(url) as r:
                 data = await r.json()
 
+
             results = data.get("results", [])
+
 
             if year:
                 results = [
                     x for x in results
-                    if year in (x.get("release_date", "") or x.get("first_air_date", ""))
+                    if year in (
+                        x.get("release_date","")
+                        or x.get("first_air_date","")
+                    )
                 ]
 
+
             if not results:
-                return await wait.edit("❌ Not Found")
+                return await status.edit("❌ Not Found")
+
 
             item = results[0]
-            media_type = item.get("media_type", "movie")
+            media_type = item.get("media_type","movie")
             mid = item["id"]
 
-            # images API
-            img_url = (
-                f"https://api.themoviedb.org/3/{media_type}/{mid}/images"
+
+            img_api = (
+                f"https://api.themoviedb.org/3/"
+                f"{media_type}/{mid}/images"
                 f"?api_key={TMDB_API}"
             )
 
-            async with session.get(img_url) as r:
+            async with session.get(img_api) as r:
                 imgs = await r.json()
+
 
             photos = []
 
-            # poster
             if item.get("poster_path"):
                 photos.append(IMG + item["poster_path"])
 
-            # backdrops
-            for x in imgs.get("backdrops", []):
-                path = x.get("file_path")
-                if path:
-                    photos.append(IMG + path)
 
-            # remove duplicates + limit 20
+            for x in imgs.get("backdrops", []):
+                photos.append(IMG + x["file_path"])
+
+
             photos = list(dict.fromkeys(photos))[:20]
 
+
             if not photos:
-                return await wait.edit("❌ Images not found")
+                return await status.edit("❌ Images Not Found")
 
-            await wait.delete()
 
-            # send in batches of 10
+            await status.delete()
+
+
+            title = (
+                item.get("title")
+                or item.get("name")
+                or query
+            )
+
+
+            caption = (
+                f"🖼 Iᴍᴀɢᴇs ғᴏʀ: {title}\n\n"
+                "◍ Sᴏᴜʀᴄᴇ: @Patrick_Botz"
+            )
+
+
             for i in range(0, len(photos), 10):
 
-                media = []
+                album = []
 
                 for p in photos[i:i+10]:
-                    img_bytes = await download_image(session, p)
-                    img_bytes.seek(0)
-                    media.append(InputMediaPhoto(img_bytes))
+                    img = await download_image(session, p)
+                    img.seek(0)
 
-                await message.reply_media_group(media)
+                    album.append(
+                        InputMediaPhoto(
+                            img,
+                            caption=caption if i == 0 and len(album)==0 else None
+                        )
+                    )
 
-                await asyncio.sleep(2)
+
+                await message.reply_media_group(album)
+
+                await asyncio.sleep(1)
+
 
     except Exception as e:
-        await wait.edit(f"❌ ERROR\n\n{e}")
+        await status.edit(f"❌ ERROR\n{e}")
