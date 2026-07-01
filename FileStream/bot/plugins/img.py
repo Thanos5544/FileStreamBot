@@ -1,147 +1,111 @@
 from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto
 import aiohttp
-import asyncio
-import re
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
 async def img(client, message):
 
     if len(message.command) < 2:
-        return await message.reply_text(
-            "❌ Use:\n/img movie name"
-        )
+        return await message.reply_text("❌ Use:\n/img movie name")
 
     name = " ".join(message.command[1:])
 
-    msg = await message.reply_text(
-        "🔎 Fetching HD Images..."
-    )
+    status = await message.reply_text("🔎 Fetching HD Images...")
 
     try:
-
-        year = None
-        match = re.search(r"(19|20)\d{2}", name)
-
-        if match:
-            year = match.group()
-            clean_name = name.replace(year, "").strip()
-        else:
-            clean_name = name
-
-
         async with aiohttp.ClientSession() as session:
 
-            search_url = (
+            url = (
                 "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={clean_name}"
+                f"?api_key={TMDB_API}&query={name}"
             )
 
-            async with session.get(search_url) as resp:
-                search = await resp.json()
+            async with session.get(url) as r:
+                data = await r.json()
+
+            if not data.get("results"):
+                return await status.edit("❌ Not Found")
+
+            item = data["results"][0]
+
+            media_type = item.get("media_type", "movie")
+            mid = item["id"]
 
 
-            results = search.get("results", [])
-
-
-            if year:
-                for r in results:
-                    date = r.get("release_date") or r.get("first_air_date")
-
-                    if date and date.startswith(year):
-                        results = [r]
-                        break
-
-
-            if not results:
-                return await msg.edit("❌ Not found")
-
-
-            movie = results[0]
-
-            media_type = movie.get(
-                "media_type",
-                "movie"
-            )
-
-            movie_id = movie["id"]
-
-
-            image_url = (
+            img_url = (
                 f"https://api.themoviedb.org/3/"
-                f"{media_type}/{movie_id}/images"
+                f"{media_type}/{mid}/images"
                 f"?api_key={TMDB_API}"
             )
 
-
-            async with session.get(image_url) as resp:
-                data = await resp.json()
-
+            async with session.get(img_url) as r:
+                imgs = await r.json()
 
 
-        images = []
+        photos = []
 
 
-        if movie.get("poster_path"):
-            images.append(
-                IMG + movie["poster_path"]
-            )
+        base = "https://image.tmdb.org/t/p/original"
 
 
-        for x in data.get("posters", []):
-
-            url = IMG + x["file_path"]
-
-            if url not in images:
-                images.append(url)
+        # Posters first
+        for x in imgs.get("posters", []):
+            photos.append(base + x["file_path"])
 
 
-
-        for x in data.get("backdrops", []):
-
-            url = IMG + x["file_path"]
-
-            if url not in images:
-                images.append(url)
+        # Backdrops
+        for x in imgs.get("backdrops", []):
+            photos.append(base + x["file_path"])
 
 
+        # Still images
+        for x in imgs.get("stills", []):
+            photos.append(base + x["file_path"])
 
-        images = images[:20]
+
+        # remove duplicate
+        photos = list(dict.fromkeys(photos))
 
 
-        await msg.edit(
-            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(images)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+        # only 20
+        photos = photos[:20]
+
+
+        if not photos:
+            return await status.edit("❌ No Images Found")
+
+
+        await status.edit(
+            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(photos)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
         )
 
 
-        # first 10
-        for i in range(0, len(images), 10):
+        for i in range(0, len(photos), 10):
 
-            album = []
+            media = []
 
-            for pic in images[i:i+10]:
-                album.append(
-                    InputMediaPhoto(pic)
+            for p in photos[i:i+10]:
+                media.append(
+                    InputMediaPhoto(p)
                 )
 
-
-            await message.reply_media_group(album)
-
-            await asyncio.sleep(3)
+            await message.reply_media_group(media)
 
 
-        await msg.delete()
+        await message.reply_text(
+            f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
+            f"• Source: @Patrick_Botz"
+        )
+
+
+        await status.delete()
 
 
     except Exception as e:
-        print("IMG ERROR:", e)
-
-        try:
-            await msg.delete()
-        except:
-            pass
+        await status.edit(
+            "❌ RESULT ERROR"
+        )
