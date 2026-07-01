@@ -1,10 +1,7 @@
 import aiohttp
 
 from pyrogram import filters
-from pyrogram.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton
-)
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from FileStream.bot import FileStream
 
@@ -13,126 +10,103 @@ TMDB_API = "18303910643c603ebb9e370f2f49db56"
 
 
 @FileStream.on_message(filters.command("img"))
-async def search_movie(_, m):
+async def img(_, m):
 
     if len(m.command) < 2:
-        return await m.reply_text(
-            "❌ Use:\n/img movie name"
-        )
+        return await m.reply_text("Use: /img movie name")
 
-    name = " ".join(m.command[1:])
+    query = " ".join(m.command[1:])
 
-    msg = await m.reply_text(
-        "🔎 Searching..."
-    )
+    msg = await m.reply_text("🔎 Searching...")
 
 
     async with aiohttp.ClientSession() as s:
 
         url = (
-        "https://api.themoviedb.org/3/search/multi"
-        f"?api_key={TMDB_API}&query={name}"
+            "https://api.themoviedb.org/3/search/multi"
+            f"?api_key={TMDB_API}&query={query}"
         )
 
         async with s.get(url) as r:
             data = await r.json()
 
 
-    buttons=[]
+    btn=[]
 
+    for x in data.get("results", [])[:8]:
 
-    for item in data.get("results", [])[:10]:
-
-        title = (
-        item.get("title")
-        or
-        item.get("name")
-        )
-
-
-        media = item.get("media_type")
-
-
-        if media not in ["movie","tv"]:
+        if x.get("media_type") not in ["movie","tv"]:
             continue
 
+        title = x.get("title") or x.get("name")
 
-        buttons.append(
+        btn.append(
         [
         InlineKeyboardButton(
             title,
-            callback_data=f"poster#{item['id']}#{media}"
+            callback_data=f"poster_{x['id']}_{x['media_type']}"
         )
         ])
 
 
-    if not buttons:
-        return await msg.edit(
-            "❌ No Result Found"
-        )
+    if not btn:
+        return await msg.edit("❌ No Result Found")
 
 
     await msg.edit(
-        "🎬 **Select Movie / Series**",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        "🎬 Select:",
+        reply_markup=InlineKeyboardMarkup(btn)
     )
 
 
 
-
-
-@FileStream.on_callback_query(filters.regex("^poster#"))
+@FileStream.on_callback_query(filters.regex("^poster_"))
 async def poster(_, q):
 
-    _, movie_id, typ = q.data.split("#")
+    try:
+
+        _, mid, typ = q.data.split("_")
 
 
-    async with aiohttp.ClientSession() as s:
+        async with aiohttp.ClientSession() as s:
 
-        url = (
-        f"https://api.themoviedb.org/3/{typ}/{movie_id}/images"
-        f"?api_key={TMDB_API}"
+            url = (
+            f"https://api.themoviedb.org/3/{typ}/{mid}/images"
+            f"?api_key={TMDB_API}"
+            )
+
+            async with s.get(url) as r:
+                data = await r.json()
+
+
+        btn=[]
+
+
+        for i,p in enumerate(data.get("posters",[])[:10],1):
+
+            link = (
+            "https://image.tmdb.org/t/p/original"
+            +
+            p["file_path"]
+            )
+
+
+            btn.append(
+            [
+            InlineKeyboardButton(
+                f"{i}. Click Here",
+                url=link
+            )
+            ])
+
+
+        await q.message.edit(
+            "📦 **Available Posters**\n\n👇 Choose:",
+            reply_markup=InlineKeyboardMarkup(btn)
         )
 
-        async with s.get(url) as r:
-            data = await r.json()
-
-
-    buttons=[]
-
-
-    for i, poster in enumerate(
-        data.get("posters",[])[:10],
-        1
-    ):
-
-        link = (
-        "https://image.tmdb.org/t/p/original"
-        +
-        poster["file_path"]
-        )
-
-
-        buttons.append(
-        [
-        InlineKeyboardButton(
-            f"{i}. Click Here",
-            url=link
-        )
-        ])
-
-
-
-    if not buttons:
-        return await q.answer(
-            "❌ Poster not found",
+    except Exception as e:
+        await q.answer(
+            "Poster error",
             show_alert=True
-        )
-
-
-    await q.message.edit(
-        "📦 **Available Posters**\n\n"
-        "🖼 **Posters:**\n\n"
-        "👇 Choose Poster",
-        reply_markup=InlineKeyboardMarkup(buttons)
         )
