@@ -1,14 +1,11 @@
+from pyrogram import Client, filters
+from pyrogram.types import InputMediaPhoto
 import aiohttp
 import re
 import asyncio
-from pyrogram import Client, filters
-from pyrogram.types import InputMediaPhoto
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-
-TMDB_BASE = "https://api.themoviedb.org/3"
-TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -40,7 +37,7 @@ async def img(client, message):
         async with aiohttp.ClientSession() as session:
 
             search_url = (
-                f"{TMDB_BASE}/search/multi"
+                "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={search_name}"
             )
 
@@ -50,7 +47,7 @@ async def img(client, message):
 
             results = [
                 x for x in search.get("results", [])
-                if x.get("media_type") in ["movie", "tv"]
+                if x.get("media_type") in ["movie","tv"]
             ]
 
 
@@ -58,7 +55,7 @@ async def img(client, message):
                 return await msg.edit("❌ Not found")
 
 
-            item = results[0]
+            movie = results[0]
 
 
             if year:
@@ -67,18 +64,18 @@ async def img(client, message):
                         x.get("release_date")
                         or x.get("first_air_date")
                     )
-
                     if date and date.startswith(year):
-                        item = x
+                        movie = x
                         break
 
 
-            media_type = item.get("media_type")
-            item_id = item.get("id")
+            media_type = movie.get("media_type","movie")
+            movie_id = movie["id"]
 
 
             image_url = (
-                f"{TMDB_BASE}/{media_type}/{item_id}/images"
+                f"https://api.themoviedb.org/3/"
+                f"{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
@@ -91,32 +88,29 @@ async def img(client, message):
         images = []
 
 
-        # Poster first
-        for x in data.get("posters", [])[:30]:
+        # same old style
+        if movie.get("poster_path"):
             images.append(
-                TMDB_IMG + x["file_path"]
+                "https://image.tmdb.org/t/p/original"
+                + movie["poster_path"]
             )
 
 
-        # Backdrops
-        for x in data.get("backdrops", [])[:30]:
+        if movie.get("backdrop_path"):
             images.append(
-                TMDB_IMG + x["file_path"]
+                "https://image.tmdb.org/t/p/original"
+                + movie["backdrop_path"]
             )
 
 
-        if item.get("poster_path"):
-            images.insert(
-                0,
-                TMDB_IMG + item["poster_path"]
+        for x in data.get("backdrops", []):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
             )
 
 
         images = list(dict.fromkeys(images))[:20]
-
-
-        if not images:
-            return await msg.edit("❌ No images found")
 
 
         await msg.edit(
@@ -128,9 +122,9 @@ async def img(client, message):
 
             album = []
 
-            for pic in images[i:i+10]:
+            for img in images[i:i+10]:
                 album.append(
-                    InputMediaPhoto(media=pic)
+                    InputMediaPhoto(media=img)
                 )
 
 
@@ -152,9 +146,5 @@ async def img(client, message):
 
 
     except Exception as e:
-        print("IMG ERROR:", e)
-
-        try:
-            await msg.delete()
-        except:
-            pass
+        print(e)
+        await msg.delete()
