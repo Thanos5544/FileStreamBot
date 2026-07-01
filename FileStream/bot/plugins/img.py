@@ -29,7 +29,7 @@ async def img(client, message):
 
         async with aiohttp.ClientSession() as session:
             search_url = (
-                "https://api.themoviedb.org/3/search/multi"
+                "https://themoviedb.org"
                 f"?api_key={TMDB_API}&query={search_name}"
             )
 
@@ -56,7 +56,7 @@ async def img(client, message):
 
             # इमेजेस फेच करना
             image_url = (
-                f"https://api.themoviedb.org/3/{media_type}/{movie_id}/images"
+                f"https://themoviedb.org{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
@@ -67,13 +67,13 @@ async def img(client, message):
         images = []
 
         if movie.get("poster_path"):
-            images.append(f"https://image.tmdb.org/t/p/original{movie['poster_path']}")
+            images.append(f"https://tmdb.org{movie['poster_path']}")
 
         if movie.get("backdrop_path"):
-            images.append(f"https://image.tmdb.org/t/p/original{movie['backdrop_path']}")
+            images.append(f"https://tmdb.org{movie['backdrop_path']}")
 
         for x in data.get("backdrops", []):
-            images.append(f"https://image.tmdb.org/t/p/original{x['file_path']}")
+            images.append(f"https://tmdb.org{x['file_path']}")
 
         # यूनिक इमेजेस निकालना (अधिकतम 20)
         unique_images = list(dict.fromkeys(images))[:20]
@@ -85,11 +85,17 @@ async def img(client, message):
         for i in range(0, len(unique_images), 10):
             album = []
             for img_url in unique_images[i:i+10]:
-                # Pyrogram v2+ में 'media' कीवर्ड का इस्तेमाल करना ज़रूरी है
                 album.append(InputMediaPhoto(media=img_url))
             
-            # reply_media_group की जगह message.reply_media_group सुरक्षित तरीका है
-            await message.reply_media_group(media=album)
+            # लाइब्रेरी के बग को बाईपास करने के लिए try-except का इस्तेमाल
+            try:
+                await message.reply_media_group(media=album)
+            except Exception as media_err:
+                # अगर 'topics' वाला एरर आता है तो उसे इग्नोर करें क्योंकि टेलीग्राम पर फोटो जा चुकी है
+                if "topics" in str(media_err):
+                    pass
+                else:
+                    raise media_err
 
         await msg.delete()
 
