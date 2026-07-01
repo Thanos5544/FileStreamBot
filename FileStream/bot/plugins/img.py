@@ -77,8 +77,7 @@ async def img(client, message):
             image_url = (
                 f"https://api.themoviedb.org/3/"
                 f"{media_type}/{movie_id}/images"
-                f"?include_image_language=en,null,hi"
-                f"&api_key={TMDB_API}"
+                f"?api_key={TMDB_API}"
             )
 
 
@@ -90,7 +89,6 @@ async def img(client, message):
         images = []
 
 
-        # Main poster
         if movie.get("poster_path"):
             images.append(
                 "https://image.tmdb.org/t/p/original"
@@ -98,7 +96,6 @@ async def img(client, message):
             )
 
 
-        # Main backdrop
         if movie.get("backdrop_path"):
             images.append(
                 "https://image.tmdb.org/t/p/original"
@@ -106,20 +103,6 @@ async def img(client, message):
             )
 
 
-        # English / original posters only
-        for x in data.get("posters", []):
-
-            lang = x.get("iso_639_1")
-
-            if lang in ["en", None]:
-
-                images.append(
-                    "https://image.tmdb.org/t/p/original"
-                    + x["file_path"]
-                )
-
-
-        # Backdrops
         for x in data.get("backdrops", []):
 
             if x.get("file_path"):
@@ -145,7 +128,6 @@ async def img(client, message):
 
             album = []
 
-
             for pic in images[i:i+10]:
 
                 album.append(
@@ -159,7 +141,7 @@ async def img(client, message):
 
                     album[0].caption = (
                         f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
-                        f"• <b>SOURCE:</b> @Patrick_BotZ"
+                        f"• <b>SOURCE:</b> @Patrick_Botz"
                     )
 
                     album[0].parse_mode = "html"
@@ -185,7 +167,5 @@ async def img(client, message):
 
 
     except Exception as e:
-
         print(e)
-
         await msg.delete()
