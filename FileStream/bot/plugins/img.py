@@ -5,7 +5,7 @@ import asyncio
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-TMDB_IMG = "https://image.tmdb.org/t/p/original"
+IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -19,7 +19,7 @@ async def img(client, message):
     name = " ".join(message.command[1:])
 
     msg = await message.reply_text(
-        "🔎 Fetching HD Posters..."
+        "🔎 Fetching HD Images..."
     )
 
     try:
@@ -31,79 +31,66 @@ async def img(client, message):
                 f"?api_key={TMDB_API}&query={name}"
             )
 
-            async with session.get(search_url) as r:
-                search = await r.json()
+            async with session.get(search_url) as resp:
+                search = await resp.json()
 
 
-            results = search.get("results", [])
-
-            if not results:
-                await msg.edit("❌ Not Found")
-                return
+            if not search.get("results"):
+                return await msg.edit("❌ Not found")
 
 
-            item = results[0]
+            movie = search["results"][0]
 
-            media_type = item.get(
-                "media_type",
-                "movie"
-            )
-
-            media_id = item["id"]
+            media_type = movie.get("media_type", "movie")
+            movie_id = movie["id"]
 
 
-            images_url = (
+            image_url = (
                 f"https://api.themoviedb.org/3/"
-                f"{media_type}/{media_id}/images"
+                f"{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
 
-            async with session.get(images_url) as r:
-                data = await r.json()
+            async with session.get(image_url) as resp:
+                data = await resp.json()
 
 
-
-        posters = []
-        backdrops = []
+        images = []
 
 
-        # Main poster
-        if item.get("poster_path"):
-            posters.append(
-                TMDB_IMG + item["poster_path"]
+        # Poster first
+        if movie.get("poster_path"):
+            images.append(
+                IMG + movie["poster_path"]
             )
 
 
-        # All posters
+        # More posters
         for p in data.get("posters", []):
 
-            url = TMDB_IMG + p["file_path"]
+            url = IMG + p["file_path"]
 
-            if url not in posters:
-                posters.append(url)
+            if url not in images:
+                images.append(url)
 
 
 
-        # Backdrops
+        # Backdrops if needed
         for b in data.get("backdrops", []):
 
-            url = TMDB_IMG + b["file_path"]
+            url = IMG + b["file_path"]
 
-            if url not in backdrops:
-                backdrops.append(url)
+            if url not in images:
+                images.append(url)
 
 
-
-        images = posters + backdrops
+        # ONLY 20
+        images = images[:20]
 
 
         if not images:
-            await msg.edit(
-                "❌ No Images Found"
-            )
-            return
-
+            return await msg.edit("❌ Images not found")
 
 
         await msg.edit(
@@ -111,8 +98,7 @@ async def img(client, message):
         )
 
 
-
-        # Telegram max 10 photos per album
+        # Telegram max 10
         for i in range(0, len(images), 10):
 
             album = []
@@ -125,13 +111,10 @@ async def img(client, message):
 
             await message.reply_media_group(album)
 
-            # avoid flood
             await asyncio.sleep(3)
 
 
-
         await msg.delete()
-
 
 
     except Exception as e:
