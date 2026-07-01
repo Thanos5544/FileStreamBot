@@ -5,6 +5,7 @@ import re
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
+BASE = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -14,6 +15,7 @@ async def img(client, message):
         return await message.reply_text(
             "❌ Use:\n/img movie name year"
         )
+
 
     name = " ".join(message.command[1:])
 
@@ -47,7 +49,6 @@ async def img(client, message):
             results = search.get("results", [])
 
 
-            # year filter
             if year:
                 results = [
                     x for x in results
@@ -59,28 +60,25 @@ async def img(client, message):
 
 
             if not results:
-                return await msg.edit("❌ Not found")
+                return await msg.edit("❌ Not Found")
 
 
             movie = results[0]
 
-            media_type = movie.get("media_type", "movie")
+            media_type = movie.get("media_type","movie")
             movie_id = movie["id"]
 
 
-            image_url = (
+            img_url = (
                 f"https://api.themoviedb.org/3/"
                 f"{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
 
-            async with session.get(image_url) as resp:
+            async with session.get(img_url) as resp:
                 data = await resp.json()
 
-
-
-        base = "https://image.tmdb.org/t/p/original"
 
 
         images = []
@@ -88,28 +86,36 @@ async def img(client, message):
 
         if movie.get("poster_path"):
             images.append(
-                base + movie["poster_path"]
+                BASE + movie["poster_path"]
             )
 
 
         if movie.get("backdrop_path"):
             images.append(
-                base + movie["backdrop_path"]
+                BASE + movie["backdrop_path"]
             )
 
 
+        # Backdrops
         for x in data.get("backdrops", []):
             images.append(
-                base + x["file_path"]
+                BASE + x["file_path"]
             )
 
 
-        # remove duplicate + max 20
+        # Posters extra
+        for x in data.get("posters", []):
+            images.append(
+                BASE + x["file_path"]
+            )
+
+
+        # remove repeat + max 20
         images = list(dict.fromkeys(images))[:20]
 
 
         if not images:
-            return await msg.edit("❌ Images not found")
+            return await msg.edit("❌ Images Not Found")
 
 
         await msg.edit(
@@ -117,7 +123,11 @@ async def img(client, message):
         )
 
 
-        title = movie.get("title") or movie.get("name") or name
+        title = (
+            movie.get("title")
+            or movie.get("name")
+            or name
+        )
 
 
         caption = (
@@ -129,6 +139,7 @@ async def img(client, message):
         for i in range(0, len(images), 10):
 
             album = []
+
 
             for img in images[i:i+10]:
 
