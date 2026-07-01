@@ -2,135 +2,172 @@ from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto
 import aiohttp
 import asyncio
+import re
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
 IMG = "https://image.tmdb.org/t/p/original"
 
 
-@Client.on_message(filters.command("img"))
-async def img(client, message):
+async def tmdb_search(name):
 
-    if len(message.command) < 2:
-        return await message.reply_text(
-            "❌ Use:\n/img movie name"
+    year = None
+
+    m = re.search(r"(19|20)\d{2}", name)
+
+    if m:
+        year = m.group()
+        name = name.replace(year, "").strip()
+
+
+    async with aiohttp.ClientSession() as session:
+
+        url = (
+            "https://api.themoviedb.org/3/search/multi"
+            f"?api_key={TMDB_API}&query={name}"
         )
 
-    name = " ".join(message.command[1:])
+        async with session.get(url) as r:
+            data = await r.json()
 
-    wait = await message.reply_text("🔎 Fetching HD Images...")
+
+    results = data.get("results", [])
+
+    if year:
+        for x in results:
+            date = (
+                x.get("release_date")
+                or
+                x.get("first_air_date")
+                or ""
+            )
+
+            if date.startswith(year):
+                return x
+
+
+    return results[0] if results else None
+
+
+
+async def get_imgs(item):
+
+    typ = item.get("media_type","movie")
+    mid = item["id"]
+
+
+    async with aiohttp.ClientSession() as session:
+
+        url = (
+            f"https://api.themoviedb.org/3/"
+            f"{typ}/{mid}/images"
+            f"?api_key={TMDB_API}"
+            "&include_image_language=en,null,hi"
+        )
+
+
+        async with session.get(url) as r:
+            data = await r.json()
+
+
+    imgs=[]
+
+
+    # poster
+    if item.get("poster_path"):
+        imgs.append(
+            IMG + item["poster_path"]
+        )
+
+
+    # backdrops
+    for x in data.get("backdrops",[]):
+        imgs.append(
+            IMG+x["file_path"]
+        )
+
+
+    # posters
+    for x in data.get("posters",[]):
+        imgs.append(
+            IMG+x["file_path"]
+        )
+
+
+    return list(dict.fromkeys(imgs))[:20]
+
+
+
+async def send_album(client, chat, imgs):
+
+    media=[]
+
+    for x in imgs:
+        media.append(
+            InputMediaPhoto(x)
+        )
+
+
+    if media:
+        await client.send_media_group(
+            chat,
+            media
+        )
+
+
+
+@Client.on_message(filters.command("img"))
+async def img(client,message):
+
+    if len(message.command)<2:
+        return await message.reply(
+            "/img movie name year"
+        )
+
+
+    name=" ".join(message.command[1:])
+
+    m=await message.reply("🔎 Searching...")
+
 
     try:
-        async with aiohttp.ClientSession() as session:
 
-            # multi search (movie + tv)
-            url = (
-                "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={name}"
-            )
-
-            async with session.get(url) as r:
-                result = await r.json()
+        item=await tmdb_search(name)
 
 
-            if not result.get("results"):
-                return await wait.edit("❌ Not Found")
+        if not item:
+            return await m.edit("❌ Not Found")
 
 
-            item = result["results"][0]
-
-            media_type = item.get("media_type", "movie")
-            mid = item["id"]
+        imgs=await get_imgs(item)
 
 
-            # details with images
-            imgurl = (
-                f"https://api.themoviedb.org/3/"
-                f"{media_type}/{mid}/images"
-                f"?api_key={TMDB_API}"
-                "&include_image_language=en,null,hi"
-            )
-
-            async with session.get(imgurl) as r:
-                data = await r.json()
+        if not imgs:
+            return await m.edit("❌ Images not found")
 
 
-        pics = []
+        await m.delete()
 
 
-        # Poster
-        if item.get("poster_path"):
-            pics.append(
-                IMG + item["poster_path"]
-            )
+        await send_album(
+            client,
+            message.chat.id,
+            imgs[:10]
+        )
 
 
-        # Backdrop
-        if item.get("backdrop_path"):
-            pics.append(
-                IMG + item["backdrop_path"]
-            )
+        await asyncio.sleep(3)
 
 
-        # Hindi posters first
-        hindi = []
-
-        for p in data.get("posters", []):
-
-            if p.get("iso_639_1") == "hi":
-                hindi.append(
-                    IMG + p["file_path"]
-                )
-
-
-        pics.extend(hindi[:5])
-
-
-        # all backdrops
-        for b in data.get("backdrops", []):
-
-            pics.append(
-                IMG + b["file_path"]
-            )
-
-
-        # remove duplicate
-        pics = list(dict.fromkeys(pics))
-
-
-        if not pics:
-            return await wait.edit("❌ Images not found")
-
-
-        pics = pics[:25]
-
-
-        await wait.delete()
-
-
-        # Telegram max 10
-        for i in range(0, len(pics), 10):
-
-            album = []
-
-            for x in pics[i:i+10]:
-                album.append(
-                    InputMediaPhoto(x)
-                )
-
-            await client.send_media_group(
-                chat_id=message.chat.id,
-                media=album
-            )
-
-
-            if i + 10 < len(pics):
-                await asyncio.sleep(3)
-
+        await send_album(
+            client,
+            message.chat.id,
+            imgs[10:20]
+        )
 
 
     except Exception as e:
 
-        await wait.edit(
-            f"❌ ERROR\n\n{e}"
+        await m.edit(
+            f"❌ ERROR\n{e}"
         )
