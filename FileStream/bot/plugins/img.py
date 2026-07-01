@@ -1,15 +1,20 @@
 import aiohttp
 
 from pyrogram import filters
-from pyrogram.types import InputMediaPhoto
+from pyrogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InputMediaPhoto
+)
 
-from pyrogram import Client
-
-from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx
+from FileStream.bot import FileStream
 
 
-@Client.on_message(filters.command("img"))
-async def img(_, m):
+TMDB_API = "18303910643c603ebb9e370f2f49db56"
+
+
+@FileStream.on_message(filters.command("img"))
+async def img_search(_, m):
 
     if len(m.command) < 2:
         return await m.reply_text(
@@ -18,77 +23,110 @@ async def img(_, m):
 
     name = " ".join(m.command[1:])
 
-
     msg = await m.reply_text(
-        "🔎 Fetching HD Images..."
+        "🔎 Searching..."
     )
 
 
-    data = await get_movie_detailsx(name)
+    async with aiohttp.ClientSession() as s:
+
+        url = (
+            "https://api.themoviedb.org/3/search/multi"
+            f"?api_key={TMDB_API}&query={name}"
+        )
+
+        async with s.get(url) as r:
+            data = await r.json()
 
 
-    if not data:
-        return await msg.edit(
-            "❌ Movie not found"
+    buttons = []
+
+    for x in data.get("results", [])[:8]:
+
+        if x.get("media_type") not in ["movie", "tv"]:
+            continue
+
+        title = x.get("title") or x.get("name")
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    title,
+                    callback_data=f"img_{x['id']}_{x['media_type']}"
+                )
+            ]
         )
 
 
-    pics = []
-
-
-    if data.get("poster_url"):
-        pics.append(data["poster_url"])
-
-    if data.get("backdrop_url"):
-        pics.append(data["backdrop_url"])
-
-
-    # TMDB images
-    tmdb_id = data.get("id")
-    media = data.get("type", "movie")
-
-
-    if tmdb_id:
-
-        async with aiohttp.ClientSession() as s:
-
-            url = (
-            f"https://api.themoviedb.org/3/{media}/{tmdb_id}/images"
-            f"?api_key=18303910643c603ebb9e370f2f49db56"
-            )
-
-            async with s.get(url) as r:
-                img = await r.json()
-
-
-        for p in img.get("backdrops", [])[:18]:
-
-            pics.append(
-            "https://image.tmdb.org/t/p/original"
-            + p["file_path"]
-            )
-
-
-    pics = list(dict.fromkeys(pics))[:20]
-
-
-    if not pics:
+    if not buttons:
         return await msg.edit(
+            "❌ No Result Found"
+        )
+
+
+    await msg.edit(
+        "🎬 Select Movie / Series",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+
+
+@FileStream.on_callback_query(filters.regex("^img_"))
+async def send_images(_, q):
+
+    _, mid, typ = q.data.split("_")
+
+
+    await q.answer("Fetching HD Images...")
+
+
+    async with aiohttp.ClientSession() as s:
+
+        url = (
+            f"https://api.themoviedb.org/3/{typ}/{mid}/images"
+            f"?api_key={TMDB_API}"
+        )
+
+        async with s.get(url) as r:
+            data = await s.json()
+
+
+
+    photos = []
+
+
+    # backdrops
+    for x in data.get("backdrops", [])[:15]:
+
+        photos.append(
+            InputMediaPhoto(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
+            )
+        )
+
+
+    # posters
+    for x in data.get("posters", [])[:5]:
+
+        photos.append(
+            InputMediaPhoto(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
+            )
+        )
+
+
+    if not photos:
+        return await q.message.reply_text(
             "❌ Images not found"
         )
 
 
-    media=[]
-
-    for x in pics:
-        media.append(
-            InputMediaPhoto(x)
-        )
+    await q.message.delete()
 
 
-    await m.reply_media_group(
-        media
+    await q.message.reply_media_group(
+        photos[:20]
     )
-
-
-    await msg.delete()
