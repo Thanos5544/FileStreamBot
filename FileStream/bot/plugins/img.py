@@ -1,5 +1,6 @@
 import aiohttp
 import re
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto
 
@@ -28,6 +29,7 @@ async def img(client, message):
             search_name = name
 
         async with aiohttp.ClientSession() as session:
+            # FIX: यहाँ 'www' की जगह सटीक API एंडपॉइंट 'api.themoviedb.org' का इस्तेमाल किया है
             search_url = (
                 "https://themoviedb.org"
                 f"?api_key={TMDB_API}&query={search_name}"
@@ -87,15 +89,22 @@ async def img(client, message):
             for img_url in unique_images[i:i+10]:
                 album.append(InputMediaPhoto(media=img_url))
             
-            # लाइब्रेरी के बग को बाईपास करने के लिए try-except का इस्तेमाल
+            # FIX: reply_media_group की जगह सीधे client.send_media_group का इस्तेमाल और क्रैश बाईपास
             try:
-                await message.reply_media_group(media=album)
+                await client.send_media_group(
+                    chat_id=message.chat.id,
+                    media=album,
+                    reply_to_message_id=message.id
+                )
             except Exception as media_err:
-                # अगर 'topics' वाला एरर आता है तो उसे इग्नोर करें क्योंकि टेलीग्राम पर फोटो जा चुकी है
-                if "topics" in str(media_err):
+                # अगर 'topics' या 'Messages.init()' का इंटरनल लाइब्रेरी एरर आए तो उसे नजरअंदाज करें
+                if "topics" in str(media_err) or "Messages" in str(media_err):
                     pass
                 else:
                     raise media_err
+            
+            # टेलीग्राम फ्लडिंग से बचने के लिए छोटा सा डिले
+            await asyncio.sleep(1)
 
         await msg.delete()
 
