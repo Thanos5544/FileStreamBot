@@ -1,9 +1,12 @@
 from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto
 import aiohttp
+import re
+import asyncio
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
+IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -17,28 +20,53 @@ async def img(client, message):
     name = " ".join(message.command[1:])
 
     msg = await message.reply_text(
-        "⬆️ Uᴘʟᴏᴀᴅɪɴɢ 20 ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+        "🔎 Fetching HD Images..."
     )
 
     try:
+
+        year = None
+        match = re.search(r"(19|20)\d{2}", name)
+
+        if match:
+            year = match.group()
+            clean = name.replace(year, "").strip()
+        else:
+            clean = name
+
+
         async with aiohttp.ClientSession() as session:
 
             search_url = (
                 "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={name}"
+                f"?api_key={TMDB_API}&query={clean}"
             )
 
             async with session.get(search_url) as resp:
                 search = await resp.json()
 
-            if not search.get("results"):
+
+            results = search.get("results", [])
+
+
+            if year:
+                for r in results:
+                    date = r.get("release_date") or r.get("first_air_date")
+
+                    if date and date.startswith(year):
+                        results = [r]
+                        break
+
+
+            if not results:
                 return await msg.edit("❌ Not Found")
 
 
-            movie = search["results"][0]
+            movie = results[0]
 
             media_type = movie.get("media_type", "movie")
             movie_id = movie["id"]
+
 
             image_url = (
                 f"https://api.themoviedb.org/3/"
@@ -46,68 +74,78 @@ async def img(client, message):
                 f"?api_key={TMDB_API}"
             )
 
+
             async with session.get(image_url) as resp:
                 data = await resp.json()
 
 
+
         images = []
 
-        # posters first
-        for x in data.get("posters", [])[:20]:
+
+        # poster first
+        for x in data.get("posters", []):
+
             images.append(
-                "https://image.tmdb.org/t/p/original"
-                + x["file_path"]
+                IMG + x["file_path"]
             )
 
 
-        # backdrops after
-        for x in data.get("backdrops", [])[:20]:
+        # backdrop
+        for x in data.get("backdrops", []):
+
             images.append(
-                "https://image.tmdb.org/t/p/original"
-                + x["file_path"]
+                IMG + x["file_path"]
             )
 
 
+        # old support
         if movie.get("poster_path"):
             images.insert(
                 0,
-                "https://image.tmdb.org/t/p/original"
-                + movie["poster_path"]
+                IMG + movie["poster_path"]
             )
 
 
         images = list(dict.fromkeys(images))[:20]
 
 
-        # 5-5 album
-        for i in range(0, len(images), 5):
+        await msg.edit(
+            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(images)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+        )
+
+
+        for i in range(0, len(images), 10):
 
             album = []
 
-            for img in images[i:i+5]:
+            for pic in images[i:i+10]:
                 album.append(
-                    InputMediaPhoto(img)
+                    InputMediaPhoto(pic)
                 )
 
             await message.reply_media_group(album)
 
+            await asyncio.sleep(1)
+
+
 
         title = movie.get("title") or movie.get("name")
-        year = (
-            movie.get("release_date","")[:4]
-            or movie.get("first_air_date","")[:4]
-        )
 
         await message.reply_text(
-            f"🖼 <b>IMAGES FOR:</b> {title} {year}\n\n"
+            f"🖼 <b>IMAGES FOR:</b> {title}\n\n"
             f"• Source: @Patrick_Botz",
             parse_mode="html"
         )
+
 
         await msg.delete()
 
 
     except Exception as e:
-        await msg.edit(
-            f"❌ RESULT ERROR\n\n{str(e)}"
-        )
+        print("IMG ERROR:", e)
+
+        try:
+            await msg.delete()
+        except:
+            pass
