@@ -5,19 +5,21 @@ import asyncio
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
 async def img(client, message):
 
     if len(message.command) < 2:
-        return await message.reply_text("❌ Use:\n/img movie name year")
+        return await message.reply_text(
+            "❌ Use:\n/img movie name year"
+        )
 
     query = " ".join(message.command[1:])
 
-    status = await message.reply_text("🔎 Fetching Images...")
-
+    status = await message.reply_text(
+        "🔎 Fetching Images..."
+    )
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -37,66 +39,89 @@ async def img(client, message):
 
             item = data["results"][0]
 
-            typ = item.get("media_type")
+            media_type = item.get("media_type")
 
-            if typ not in ["movie", "tv"]:
-                typ = "movie"
+            if media_type not in ["movie", "tv"]:
+                media_type = "movie"
+
+            mid = item["id"]
 
 
-            detail = (
-                f"https://api.themoviedb.org/3/{typ}/"
-                f"{item['id']}/images?api_key={TMDB_API}"
+            img_url = (
+                f"https://api.themoviedb.org/3/{media_type}/{mid}/images"
+                f"?api_key={TMDB_API}"
             )
 
-
-            async with session.get(detail) as r:
+            async with session.get(img_url) as r:
                 imgs = await r.json()
 
 
+        photos = []
 
-        pics = []
 
-
-        # Poster
+        # poster first
         if item.get("poster_path"):
-            pics.append(IMG + item["poster_path"])
+            photos.append(
+                "https://image.tmdb.org/t/p/original"
+                + item["poster_path"]
+            )
 
 
-        # Backdrops
-        for x in imgs.get("backdrops", []):
-            pics.append(IMG + x["file_path"])
+        # backdrop
+        if item.get("backdrop_path"):
+            photos.append(
+                "https://image.tmdb.org/t/p/original"
+                + item["backdrop_path"]
+            )
 
 
-        # More posters
-        for x in imgs.get("posters", []):
-            pics.append(IMG + x["file_path"])
+        # extra posters
+        for p in imgs.get("posters", [])[:10]:
+            photos.append(
+                "https://image.tmdb.org/t/p/original"
+                + p["file_path"]
+            )
 
 
+        # extra backdrops
+        for b in imgs.get("backdrops", [])[:10]:
+            photos.append(
+                "https://image.tmdb.org/t/p/original"
+                + b["file_path"]
+            )
 
-        pics = list(dict.fromkeys(pics))[:20]
+
+        photos = list(dict.fromkeys(photos))[:20]
 
 
-        if not pics:
+        if not photos:
             return await status.edit("❌ Images Not Found")
 
 
         await status.edit(
-            f"⬆️ Uploading {len(pics)} images to Telegram...\n\n"
-            f"🖼 Source: @Patrick_Botz"
+            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(photos)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
         )
 
 
-        for i in range(0, len(pics), 10):
+        caption = (
+            f"🖼 <b>IMAGES FOR:</b> {query}\n\n"
+            f"• <b>Source:</b> @Patrick_Botz"
+        )
 
-            media = [
-                InputMediaPhoto(x)
-                for x in pics[i:i+10]
-            ]
+
+        for i in range(0, len(photos), 10):
+
+            media = []
+
+            for x in photos[i:i+10]:
+                media.append(
+                    InputMediaPhoto(x)
+                )
+
+            if i == 10:
+                await asyncio.sleep(3)
 
             await message.reply_media_group(media)
-
-            if i + 10 < len(pics):
-                await asyncio.sleep(3)
 
 
         await status.delete()
