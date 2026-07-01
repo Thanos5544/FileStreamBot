@@ -11,12 +11,16 @@ from pyrogram.types import (
 
 
 def get_yt_id(url):
-    pattern = r"(?:v=|\/)([0-9A-Za-z_-]{11})"
+    pattern = r"(?:v=|youtu\.be/)([0-9A-Za-z_-]{11})"
     match = re.search(pattern, url)
     return match.group(1) if match else None
 
 
-@Client.on_message(filters.regex(r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/"))
+
+@Client.on_message(
+    filters.command("yt") |
+    filters.regex(r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/")
+)
 async def yt_download(client, message):
 
     url = message.text
@@ -28,23 +32,41 @@ async def yt_download(client, message):
             "❌ Invalid YouTube Link"
         )
 
+
     m = await message.reply_text(
         "🔎 Fetching YouTube Info..."
     )
 
+
     try:
 
         def info():
-            with yt_dlp.YoutubeDL({
+
+            opts = {
                 "quiet": True,
-                "no_warnings": True
-            }) as ydl:
+                "no_warnings": True,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android"]
+                    }
+                }
+            }
+
+
+            if os.path.exists("cookies.txt"):
+                opts["cookiefile"] = "cookies.txt"
+
+
+            with yt_dlp.YoutubeDL(opts) as ydl:
+
                 return ydl.extract_info(
                     url,
                     download=False
                 )
 
+
         data = await asyncio.to_thread(info)
+
 
         title = data.get(
             "title",
@@ -66,6 +88,7 @@ async def yt_download(client, message):
                         callback_data=f"yt|480|{video_id}"
                     )
                 ],
+
                 [
                     InlineKeyboardButton(
                         "🎬 720p",
@@ -76,6 +99,7 @@ async def yt_download(client, message):
                         callback_data=f"yt|1080|{video_id}"
                     )
                 ],
+
                 [
                     InlineKeyboardButton(
                         "🎵 Audio",
@@ -92,7 +116,9 @@ async def yt_download(client, message):
             reply_markup=buttons
         )
 
+
         await m.delete()
+
 
 
     except Exception as e:
@@ -100,6 +126,8 @@ async def yt_download(client, message):
         await m.edit(
             f"❌ Error\n{e}"
         )
+
+
 
 
 
@@ -122,47 +150,83 @@ async def yt_download_file(client, query):
     uid = query.from_user.id
 
 
+    cookie = (
+        "cookies.txt"
+        if os.path.exists("cookies.txt")
+        else None
+    )
+
+
     if quality == "audio":
 
-        file = f"{uid}.mp3"
+        file_path = f"{uid}_{video_id}.mp3"
+
 
         opts = {
-            "format": "bestaudio/best",
-            "outtmpl": file,
-            "postprocessors": [
+
+            "format":
+            "bestaudio/best",
+
+            "outtmpl":
+            f"{uid}_{video_id}.%(ext)s",
+
+            "postprocessors":
+            [
                 {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192"
+                    "key":
+                    "FFmpegExtractAudio",
+
+                    "preferredcodec":
+                    "mp3",
+
+                    "preferredquality":
+                    "192"
                 }
             ],
+
             "quiet": True
         }
 
 
     else:
 
-        file = f"{uid}.mp4"
+        file_path = f"{uid}_{video_id}.mp4"
+
 
         opts = {
+
             "format":
             f"bestvideo[height<={quality}]+bestaudio/best",
-            "merge_output_format": "mp4",
-            "outtmpl": file,
+
+            "merge_output_format":
+            "mp4",
+
+            "outtmpl":
+            file_path,
+
             "quiet": True
         }
 
 
 
+    if cookie:
+        opts["cookiefile"] = cookie
+
+
+
     try:
+
 
         def download():
 
             with yt_dlp.YoutubeDL(opts) as ydl:
+
                 ydl.download([url])
 
 
+
         await asyncio.to_thread(download)
+
 
 
         await query.message.edit_caption(
@@ -171,23 +235,26 @@ async def yt_download_file(client, query):
 
 
         await query.message.reply_document(
-            file,
-            caption="✅ Downloaded by @Patrick_Botz"
+            file_path,
+            caption="✅ Downloaded by @Patrick_BotZ"
         )
 
 
-        if os.path.exists(file):
-            os.remove(file)
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
         await query.message.delete()
 
 
+
     except Exception as e:
+
 
         await query.message.edit_caption(
             f"❌ Download Failed\n{e}"
         )
 
-        if os.path.exists(file):
-            os.remove(file)
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
