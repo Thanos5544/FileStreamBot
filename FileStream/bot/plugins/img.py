@@ -24,29 +24,29 @@ async def img(client, message):
 
     try:
 
-        year = None
         match = re.search(r"(19|20)\d{2}", name)
 
         if match:
             year = match.group()
             search_name = name.replace(year, "").strip()
         else:
+            year = None
             search_name = name
 
 
         async with aiohttp.ClientSession() as session:
 
-            search_url = (
+            url = (
                 "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={search_name}"
             )
 
-            async with session.get(search_url) as resp:
-                search = await resp.json()
+            async with session.get(url) as resp:
+                data = await resp.json()
 
 
             results = [
-                x for x in search.get("results", [])
+                x for x in data.get("results", [])
                 if x.get("media_type") in ["movie","tv"]
             ]
 
@@ -60,35 +60,32 @@ async def img(client, message):
 
             if year:
                 for x in results:
-                    date = (
-                        x.get("release_date")
-                        or x.get("first_air_date")
-                    )
-
-                    if date and date.startswith(year):
+                    d = x.get("release_date") or x.get("first_air_date")
+                    if d and d.startswith(year):
                         movie = x
                         break
 
 
             media_type = movie.get("media_type","movie")
-            movie_id = movie["id"]
+            mid = movie["id"]
 
 
-            image_url = (
+            img_url = (
                 f"https://api.themoviedb.org/3/"
-                f"{media_type}/{movie_id}/images"
+                f"{media_type}/{mid}/images"
                 f"?api_key={TMDB_API}"
             )
 
 
-            async with session.get(image_url) as resp:
-                data = await resp.json()
+            async with session.get(img_url) as resp:
+                imgs = await resp.json()
 
 
 
         images = []
 
 
+        # Main poster first
         if movie.get("poster_path"):
             images.append(
                 "https://image.tmdb.org/t/p/original"
@@ -96,17 +93,20 @@ async def img(client, message):
             )
 
 
-        if movie.get("backdrop_path"):
-            images.append(
-                "https://image.tmdb.org/t/p/original"
-                + movie["backdrop_path"]
-            )
-
-
-        for x in data.get("backdrops", []):
+        # All posters
+        for x in imgs.get("posters", []):
 
             if x.get("file_path"):
+                images.append(
+                    "https://image.tmdb.org/t/p/original"
+                    + x["file_path"]
+                )
 
+
+        # Backdrops after posters
+        for x in imgs.get("backdrops", []):
+
+            if x.get("file_path"):
                 images.append(
                     "https://image.tmdb.org/t/p/original"
                     + x["file_path"]
@@ -128,33 +128,27 @@ async def img(client, message):
 
             album = []
 
-
             for img in images[i:i+10]:
-
                 album.append(
                     InputMediaPhoto(media=img)
                 )
 
 
             if first:
-
                 album[0].caption = (
                     f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
                     f"• <b>SOURCE:</b> @Patrick_BotZ"
                 )
-
                 album[0].parse_mode = "html"
                 first = False
 
 
             try:
-
                 await client.send_media_group(
                     chat_id=message.chat.id,
                     media=album,
                     reply_to_message_id=message.id
                 )
-
 
             except Exception as e:
                 print("MEDIA ERROR:", e)
@@ -167,6 +161,5 @@ async def img(client, message):
 
 
     except Exception as e:
-
         print(e)
         await msg.delete()
