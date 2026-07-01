@@ -11,13 +11,13 @@ async def img(client, message):
 
     if len(message.command) < 2:
         return await message.reply_text(
-            "❌ Use:\n/img movie name"
+            "❌ Use:\n/img movie name year"
         )
 
     name = " ".join(message.command[1:])
 
     msg = await message.reply_text(
-        "🔎 Fetching HD Images..."
+        "⬆️ Uᴘʟᴏᴀᴅɪɴɢ 20 ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
     )
 
     try:
@@ -31,16 +31,14 @@ async def img(client, message):
             async with session.get(search_url) as resp:
                 search = await resp.json()
 
-
             if not search.get("results"):
-                return await msg.edit("❌ Not found")
+                return await msg.edit("❌ Not Found")
 
 
             movie = search["results"][0]
 
             media_type = movie.get("media_type", "movie")
             movie_id = movie["id"]
-
 
             image_url = (
                 f"https://api.themoviedb.org/3/"
@@ -54,37 +52,39 @@ async def img(client, message):
 
         images = []
 
-
-        if movie.get("poster_path"):
-            images.append(
-                "https://image.tmdb.org/t/p/original"
-                + movie["poster_path"]
-            )
-
-
-        if movie.get("backdrop_path"):
-            images.append(
-                "https://image.tmdb.org/t/p/original"
-                + movie["backdrop_path"]
-            )
-
-
-        for x in data.get("backdrops", [])[:25]:
+        # posters first
+        for x in data.get("posters", [])[:20]:
             images.append(
                 "https://image.tmdb.org/t/p/original"
                 + x["file_path"]
             )
 
 
+        # backdrops after
+        for x in data.get("backdrops", [])[:20]:
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
+            )
+
+
+        if movie.get("poster_path"):
+            images.insert(
+                0,
+                "https://image.tmdb.org/t/p/original"
+                + movie["poster_path"]
+            )
+
+
         images = list(dict.fromkeys(images))[:20]
 
 
-        # Telegram limit 10
-        for i in range(0, len(images), 10):
+        # 5-5 album
+        for i in range(0, len(images), 5):
 
             album = []
 
-            for img in images[i:i+10]:
+            for img in images[i:i+5]:
                 album.append(
                     InputMediaPhoto(img)
                 )
@@ -92,10 +92,22 @@ async def img(client, message):
             await message.reply_media_group(album)
 
 
+        title = movie.get("title") or movie.get("name")
+        year = (
+            movie.get("release_date","")[:4]
+            or movie.get("first_air_date","")[:4]
+        )
+
+        await message.reply_text(
+            f"🖼 <b>IMAGES FOR:</b> {title} {year}\n\n"
+            f"• Source: @Patrick_Botz",
+            parse_mode="html"
+        )
+
         await msg.delete()
 
 
     except Exception as e:
         await msg.edit(
-            f"❌ RESULT ERROR\n\n{e}"
+            f"❌ RESULT ERROR\n\n{str(e)}"
         )
