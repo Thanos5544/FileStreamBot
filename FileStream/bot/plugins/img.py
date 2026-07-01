@@ -23,9 +23,8 @@ async def img(client, message):
     try:
         async with aiohttp.ClientSession() as session:
 
-            # Search Movie
             search_url = (
-                "https://api.themoviedb.org/3/search/movie"
+                "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={name}"
             )
 
@@ -34,16 +33,18 @@ async def img(client, message):
 
 
             if not search.get("results"):
-                return await msg.edit("❌ Movie not found")
+                return await msg.edit("❌ Not found")
 
 
             movie = search["results"][0]
+
+            media_type = movie.get("media_type", "movie")
             movie_id = movie["id"]
 
 
-            # Movie Images
             image_url = (
-                f"https://api.themoviedb.org/3/movie/{movie_id}/images"
+                f"https://api.themoviedb.org/3/"
+                f"{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
@@ -54,7 +55,6 @@ async def img(client, message):
         images = []
 
 
-        # Poster
         if movie.get("poster_path"):
             images.append(
                 "https://image.tmdb.org/t/p/original"
@@ -62,7 +62,6 @@ async def img(client, message):
             )
 
 
-        # Backdrop
         if movie.get("backdrop_path"):
             images.append(
                 "https://image.tmdb.org/t/p/original"
@@ -70,8 +69,7 @@ async def img(client, message):
             )
 
 
-        # More Backdrops
-        for x in data.get("backdrops", [])[:18]:
+        for x in data.get("backdrops", [])[:25]:
             images.append(
                 "https://image.tmdb.org/t/p/original"
                 + x["file_path"]
@@ -81,21 +79,18 @@ async def img(client, message):
         images = list(dict.fromkeys(images))[:20]
 
 
-        if not images:
-            return await msg.edit("❌ Images not found")
+        # Telegram limit 10
+        for i in range(0, len(images), 10):
 
+            album = []
 
-        media = []
+            for img in images[i:i+10]:
+                album.append(
+                    InputMediaPhoto(img)
+                )
 
-        for img in images:
-            media.append(
-                InputMediaPhoto(img)
-            )
+            await message.reply_media_group(album)
 
-
-        await message.reply_media_group(
-            media
-        )
 
         await msg.delete()
 
