@@ -10,102 +10,92 @@ TMDB_API = "18303910643c603ebb9e370f2f49db56"
 async def img(client, message):
 
     if len(message.command) < 2:
-        return await message.reply_text("❌ Use:\n/img movie name")
+        return await message.reply_text(
+            "❌ Use:\n/img movie name"
+        )
 
     name = " ".join(message.command[1:])
 
-    status = await message.reply_text("🔎 Fetching HD Images...")
+    msg = await message.reply_text(
+        "🔎 Fetching HD Images..."
+    )
 
     try:
         async with aiohttp.ClientSession() as session:
 
-            url = (
+            search_url = (
                 "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={name}"
             )
 
-            async with session.get(url) as r:
-                data = await r.json()
-
-            if not data.get("results"):
-                return await status.edit("❌ Not Found")
-
-            item = data["results"][0]
-
-            media_type = item.get("media_type", "movie")
-            mid = item["id"]
+            async with session.get(search_url) as resp:
+                search = await resp.json()
 
 
-            img_url = (
+            if not search.get("results"):
+                return await msg.edit("❌ Not found")
+
+
+            movie = search["results"][0]
+
+            media_type = movie.get("media_type", "movie")
+            movie_id = movie["id"]
+
+
+            image_url = (
                 f"https://api.themoviedb.org/3/"
-                f"{media_type}/{mid}/images"
+                f"{media_type}/{movie_id}/images"
                 f"?api_key={TMDB_API}"
             )
 
-            async with session.get(img_url) as r:
-                imgs = await r.json()
+            async with session.get(image_url) as resp:
+                data = await resp.json()
 
 
-        photos = []
+        images = []
 
 
-        base = "https://image.tmdb.org/t/p/original"
+        if movie.get("poster_path"):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + movie["poster_path"]
+            )
 
 
-        # Posters first
-        for x in imgs.get("posters", []):
-            photos.append(base + x["file_path"])
+        if movie.get("backdrop_path"):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + movie["backdrop_path"]
+            )
 
 
-        # Backdrops
-        for x in imgs.get("backdrops", []):
-            photos.append(base + x["file_path"])
+        for x in data.get("backdrops", [])[:25]:
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
+            )
 
 
-        # Still images
-        for x in imgs.get("stills", []):
-            photos.append(base + x["file_path"])
+        images = list(dict.fromkeys(images))[:20]
 
 
-        # remove duplicate
-        photos = list(dict.fromkeys(photos))
+        # Telegram limit 10
+        for i in range(0, len(images), 10):
 
+            album = []
 
-        # only 20
-        photos = photos[:20]
-
-
-        if not photos:
-            return await status.edit("❌ No Images Found")
-
-
-        await status.edit(
-            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(photos)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
-        )
-
-
-        for i in range(0, len(photos), 10):
-
-            media = []
-
-            for p in photos[i:i+10]:
-                media.append(
-                    InputMediaPhoto(p)
+            for img in images[i:i+10]:
+                album.append(
+                    InputMediaPhoto(img)
                 )
 
-            await message.reply_media_group(media)
+            await message.reply_media_group(album)
 
 
-        await message.reply_text(
-            f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
-            f"• Source: @Patrick_Botz"
-        )
-
-
-        await status.delete()
+        await msg.delete()
 
 
     except Exception as e:
-        await status.edit(
-            "❌ RESULT ERROR"
+        await msg.edit(
+            f"❌ RESULT ERROR\n\n{e}"
         )
