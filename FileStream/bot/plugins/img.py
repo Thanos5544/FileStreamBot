@@ -2,6 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto
 import aiohttp
 import asyncio
+import re
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
@@ -24,24 +25,50 @@ async def img(client, message):
 
     try:
 
+        year = None
+        match = re.search(r"(19|20)\d{2}", name)
+
+        if match:
+            year = match.group()
+            clean_name = name.replace(year, "").strip()
+        else:
+            clean_name = name
+
+
         async with aiohttp.ClientSession() as session:
 
             search_url = (
                 "https://api.themoviedb.org/3/search/multi"
-                f"?api_key={TMDB_API}&query={name}"
+                f"?api_key={TMDB_API}&query={clean_name}"
             )
 
             async with session.get(search_url) as resp:
                 search = await resp.json()
 
 
-            if not search.get("results"):
+            results = search.get("results", [])
+
+
+            if year:
+                for r in results:
+                    date = r.get("release_date") or r.get("first_air_date")
+
+                    if date and date.startswith(year):
+                        results = [r]
+                        break
+
+
+            if not results:
                 return await msg.edit("❌ Not found")
 
 
-            movie = search["results"][0]
+            movie = results[0]
 
-            media_type = movie.get("media_type", "movie")
+            media_type = movie.get(
+                "media_type",
+                "movie"
+            )
+
             movie_id = movie["id"]
 
 
@@ -56,41 +83,35 @@ async def img(client, message):
                 data = await resp.json()
 
 
+
         images = []
 
 
-        # Poster first
         if movie.get("poster_path"):
             images.append(
                 IMG + movie["poster_path"]
             )
 
 
-        # More posters
-        for p in data.get("posters", []):
+        for x in data.get("posters", []):
 
-            url = IMG + p["file_path"]
+            url = IMG + x["file_path"]
+
+            if url not in images:
+                images.append(url)
+
+
+
+        for x in data.get("backdrops", []):
+
+            url = IMG + x["file_path"]
 
             if url not in images:
                 images.append(url)
 
 
 
-        # Backdrops if needed
-        for b in data.get("backdrops", []):
-
-            url = IMG + b["file_path"]
-
-            if url not in images:
-                images.append(url)
-
-
-        # ONLY 20
         images = images[:20]
-
-
-        if not images:
-            return await msg.edit("❌ Images not found")
 
 
         await msg.edit(
@@ -98,7 +119,7 @@ async def img(client, message):
         )
 
 
-        # Telegram max 10
+        # first 10
         for i in range(0, len(images), 10):
 
             album = []
@@ -118,7 +139,6 @@ async def img(client, message):
 
 
     except Exception as e:
-
         print("IMG ERROR:", e)
 
         try:
