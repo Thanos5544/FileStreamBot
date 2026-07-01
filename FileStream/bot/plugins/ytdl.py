@@ -11,8 +11,10 @@ from pyrogram.types import (
 
 
 def get_yt_id(url):
-    pattern = r"(?:v=|youtu\.be/)([0-9A-Za-z_-]{11})"
-    match = re.search(pattern, url)
+    match = re.search(
+        r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})",
+        url
+    )
     return match.group(1) if match else None
 
 
@@ -25,9 +27,9 @@ async def yt_download(client, message):
 
     url = message.text
 
-    video_id = get_yt_id(url)
+    vid = get_yt_id(url)
 
-    if not video_id:
+    if not vid:
         return await message.reply_text(
             "❌ Invalid YouTube Link"
         )
@@ -40,14 +42,18 @@ async def yt_download(client, message):
 
     try:
 
-        def info():
+        def get_info():
 
             opts = {
                 "quiet": True,
                 "no_warnings": True,
+                "nocheckcertificate": True,
+                "geo_bypass": True,
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android"]
+                        "player_client": [
+                            "android"
+                        ]
                     }
                 }
             }
@@ -58,14 +64,13 @@ async def yt_download(client, message):
 
 
             with yt_dlp.YoutubeDL(opts) as ydl:
-
                 return ydl.extract_info(
                     url,
                     download=False
                 )
 
 
-        data = await asyncio.to_thread(info)
+        data = await asyncio.to_thread(get_info)
 
 
         title = data.get(
@@ -81,29 +86,27 @@ async def yt_download(client, message):
                 [
                     InlineKeyboardButton(
                         "🎬 360p",
-                        callback_data=f"yt|360|{video_id}"
+                        callback_data=f"yt|360|{vid}"
                     ),
                     InlineKeyboardButton(
                         "🎬 480p",
-                        callback_data=f"yt|480|{video_id}"
+                        callback_data=f"yt|480|{vid}"
                     )
                 ],
-
                 [
                     InlineKeyboardButton(
                         "🎬 720p",
-                        callback_data=f"yt|720|{video_id}"
+                        callback_data=f"yt|720|{vid}"
                     ),
                     InlineKeyboardButton(
                         "🎬 1080p",
-                        callback_data=f"yt|1080|{video_id}"
+                        callback_data=f"yt|1080|{vid}"
                     )
                 ],
-
                 [
                     InlineKeyboardButton(
                         "🎵 Audio",
-                        callback_data=f"yt|audio|{video_id}"
+                        callback_data=f"yt|audio|{vid}"
                     )
                 ]
             ]
@@ -116,9 +119,7 @@ async def yt_download(client, message):
             reply_markup=buttons
         )
 
-
         await m.delete()
-
 
 
     except Exception as e:
@@ -134,11 +135,11 @@ async def yt_download(client, message):
 @Client.on_callback_query(filters.regex("^yt"))
 async def yt_download_file(client, query):
 
-    _, quality, video_id = query.data.split("|")
+    _, quality, vid = query.data.split("|")
 
 
     url = (
-        f"https://www.youtube.com/watch?v={video_id}"
+        f"https://www.youtube.com/watch?v={vid}"
     )
 
 
@@ -150,17 +151,9 @@ async def yt_download_file(client, query):
     uid = query.from_user.id
 
 
-    cookie = (
-        "cookies.txt"
-        if os.path.exists("cookies.txt")
-        else None
-    )
-
-
     if quality == "audio":
 
-        file_path = f"{uid}_{video_id}.mp3"
-
+        file = f"{uid}_{vid}.mp3"
 
         opts = {
 
@@ -168,7 +161,7 @@ async def yt_download_file(client, query):
             "bestaudio/best",
 
             "outtmpl":
-            f"{uid}_{video_id}.%(ext)s",
+            f"{uid}_{vid}.%(ext)s",
 
             "postprocessors":
             [
@@ -190,7 +183,7 @@ async def yt_download_file(client, query):
 
     else:
 
-        file_path = f"{uid}_{video_id}.mp4"
+        file = f"{uid}_{vid}.mp4"
 
 
         opts = {
@@ -202,15 +195,15 @@ async def yt_download_file(client, query):
             "mp4",
 
             "outtmpl":
-            file_path,
+            file,
 
             "quiet": True
         }
 
 
 
-    if cookie:
-        opts["cookiefile"] = cookie
+    if os.path.exists("cookies.txt"):
+        opts["cookiefile"] = "cookies.txt"
 
 
 
@@ -220,9 +213,7 @@ async def yt_download_file(client, query):
         def download():
 
             with yt_dlp.YoutubeDL(opts) as ydl:
-
                 ydl.download([url])
-
 
 
         await asyncio.to_thread(download)
@@ -235,13 +226,13 @@ async def yt_download_file(client, query):
 
 
         await query.message.reply_document(
-            file_path,
+            file,
             caption="✅ Downloaded by @Patrick_BotZ"
         )
 
 
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        if os.path.exists(file):
+            os.remove(file)
 
 
         await query.message.delete()
@@ -250,11 +241,6 @@ async def yt_download_file(client, query):
 
     except Exception as e:
 
-
         await query.message.edit_caption(
-            f"❌ Download Failed\n{e}"
+            f"❌ Failed\n{e}"
         )
-
-
-        if os.path.exists(file_path):
-            os.remove(file_path)
