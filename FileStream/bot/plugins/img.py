@@ -1,14 +1,11 @@
+from pyrogram import Client, filters
+from pyrogram.types import InputMediaPhoto
 import aiohttp
 import re
 import asyncio
-from pyrogram import Client, filters
-from pyrogram.types import InputMediaPhoto
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
-
-TMDB_BASE = "https://api.themoviedb.org/3"
-TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
@@ -40,7 +37,7 @@ async def img(client, message):
         async with aiohttp.ClientSession() as session:
 
             search_url = (
-                f"{TMDB_BASE}/search/multi"
+                "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={search_name}"
             )
 
@@ -50,7 +47,7 @@ async def img(client, message):
 
             results = [
                 x for x in search.get("results", [])
-                if x.get("media_type") in ["movie", "tv"]
+                if x.get("media_type") in ["movie","tv"]
             ]
 
 
@@ -67,19 +64,20 @@ async def img(client, message):
                         x.get("release_date")
                         or x.get("first_air_date")
                     )
-
                     if date and date.startswith(year):
                         movie = x
                         break
 
 
-            media_type = movie.get("media_type", "movie")
+            media_type = movie.get("media_type","movie")
             movie_id = movie["id"]
 
 
             image_url = (
-                f"{TMDB_BASE}/{media_type}/{movie_id}/images"
-                f"?api_key={TMDB_API}"
+                f"https://api.themoviedb.org/3/"
+                f"{media_type}/{movie_id}/images"
+                f"?include_image_language=en,null,hi"
+                f"&api_key={TMDB_API}"
             )
 
 
@@ -89,57 +87,56 @@ async def img(client, message):
 
 
         images = []
+        hindi = []
 
 
-        # English / Original posters first
+        # Main poster
+        if movie.get("poster_path"):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + movie["poster_path"]
+            )
+
+
+        # Backdrop
+        if movie.get("backdrop_path"):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + movie["backdrop_path"]
+            )
+
+
+        # Posters filter
         for x in data.get("posters", []):
 
             lang = x.get("iso_639_1")
 
-            if lang in [None, "en"]:
-
-                images.append(
-                    TMDB_IMG + x["file_path"]
-                )
-
-
-            if len(images) >= 15:
-                break
-
-
-
-        # Hindi posters after
-        for x in data.get("posters", []):
-
-            if x.get("iso_639_1") == "hi":
-
-                images.append(
-                    TMDB_IMG + x["file_path"]
-                )
-
-
-            if len(images) >= 18:
-                break
-
-
-
-        # Backdrops
-        for x in data.get("backdrops", []):
-
-            images.append(
-                TMDB_IMG + x["file_path"]
+            img = (
+                "https://image.tmdb.org/t/p/original"
+                + x["file_path"]
             )
 
-            if len(images) >= 20:
-                break
+            if lang in ["en", None]:
+                images.append(img)
+
+            elif lang == "hi":
+                hindi.append(img)
 
 
 
+        # Backdrops add
+        for x in data.get("backdrops", []):
+
+            if x.get("file_path"):
+                images.append(
+                    "https://image.tmdb.org/t/p/original"
+                    + x["file_path"]
+                )
+
+
+        # remove duplicate
         images = list(dict.fromkeys(images))[:20]
-
-
-        if not images:
-            return await msg.edit("❌ No images found")
+        hindi = list(dict.fromkeys(hindi))[:5]
 
 
         await msg.edit(
@@ -147,19 +144,20 @@ async def img(client, message):
         )
 
 
+        # main 20 images
         for i in range(0, len(images), 10):
 
             album = []
 
             for pic in images[i:i+10]:
-
                 album.append(
-                    InputMediaPhoto(media=pic)
+                    InputMediaPhoto(
+                        media=pic
+                    )
                 )
 
 
             try:
-
                 await client.send_media_group(
                     chat_id=message.chat.id,
                     media=album,
@@ -167,15 +165,34 @@ async def img(client, message):
                 )
 
             except Exception as e:
-                print("MEDIA ERROR:", e)
+                if "topics" not in str(e) and "Messages.init" not in str(e):
+                    raise e
 
 
             await asyncio.sleep(1)
 
 
 
+        # extra Hindi posters
+        if hindi:
+
+            album = []
+
+            for pic in hindi:
+                album.append(
+                    InputMediaPhoto(media=pic)
+                )
+
+            await client.send_media_group(
+                chat_id=message.chat.id,
+                media=album,
+                reply_to_message_id=message.id
+            )
+
+
         await message.reply_text(
-            "© Source: @Patrick_Botz"
+            f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
+            f"• <b>SOURCE:</b> @Patrick_Botz"
         )
 
 
@@ -183,10 +200,6 @@ async def img(client, message):
 
 
     except Exception as e:
-
-        print("IMG ERROR:", e)
-
-        try:
-            await msg.delete()
-        except:
-            pass
+        await msg.edit(
+            f"❌ RESULT ERROR\n\n{e}"
+            )
