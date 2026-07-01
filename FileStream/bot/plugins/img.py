@@ -64,6 +64,7 @@ async def img(client, message):
                         x.get("release_date")
                         or x.get("first_air_date")
                     )
+
                     if date and date.startswith(year):
                         movie = x
                         break
@@ -87,7 +88,6 @@ async def img(client, message):
 
 
         images = []
-        hindi = []
 
 
         # Main poster
@@ -98,7 +98,7 @@ async def img(client, message):
             )
 
 
-        # Backdrop
+        # Main backdrop
         if movie.get("backdrop_path"):
             images.append(
                 "https://image.tmdb.org/t/p/original"
@@ -106,37 +106,31 @@ async def img(client, message):
             )
 
 
-        # Posters filter
+        # English / original posters only
         for x in data.get("posters", []):
 
             lang = x.get("iso_639_1")
 
-            img = (
-                "https://image.tmdb.org/t/p/original"
-                + x["file_path"]
-            )
-
             if lang in ["en", None]:
-                images.append(img)
 
-            elif lang == "hi":
-                hindi.append(img)
-
-
-
-        # Backdrops add
-        for x in data.get("backdrops", []):
-
-            if x.get("file_path"):
                 images.append(
                     "https://image.tmdb.org/t/p/original"
                     + x["file_path"]
                 )
 
 
-        # remove duplicate
+        # Backdrops
+        for x in data.get("backdrops", []):
+
+            if x.get("file_path"):
+
+                images.append(
+                    "https://image.tmdb.org/t/p/original"
+                    + x["file_path"]
+                )
+
+
         images = list(dict.fromkeys(images))[:20]
-        hindi = list(dict.fromkeys(hindi))[:5]
 
 
         await msg.edit(
@@ -144,62 +138,54 @@ async def img(client, message):
         )
 
 
-        # main 20 images
+        first = True
+
+
         for i in range(0, len(images), 10):
 
             album = []
 
+
             for pic in images[i:i+10]:
+
                 album.append(
-                    InputMediaPhoto(
-                        media=pic
-                    )
+                    InputMediaPhoto(media=pic)
                 )
 
 
             try:
+
+                if first:
+
+                    album[0].caption = (
+                        f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
+                        f"• <b>SOURCE:</b> @Patrick_BotZ"
+                    )
+
+                    album[0].parse_mode = "html"
+
+                    first = False
+
+
                 await client.send_media_group(
                     chat_id=message.chat.id,
                     media=album,
                     reply_to_message_id=message.id
                 )
 
+
             except Exception as e:
-                if "topics" not in str(e) and "Messages.init" not in str(e):
-                    raise e
+                print("MEDIA ERROR:", e)
 
 
             await asyncio.sleep(1)
-
-
-
-        # extra Hindi posters
-        if hindi:
-
-            album = []
-
-            for pic in hindi:
-                album.append(
-                    InputMediaPhoto(media=pic)
-                )
-
-            await client.send_media_group(
-                chat_id=message.chat.id,
-                media=album,
-                reply_to_message_id=message.id
-            )
-
-
-        await message.reply_text(
-            f"🖼️ <b>IMAGES FOR:</b> {name}\n\n"
-            f"• <b>SOURCE:</b> @Patrick_Botz"
-        )
 
 
         await msg.delete()
 
 
     except Exception as e:
-        await msg.edit(
-            f"❌ RESULT ERROR\n\n{e}"
-            )
+
+        print(e)
+
+        await msg.delete()
