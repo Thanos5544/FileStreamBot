@@ -5,122 +5,104 @@ import asyncio
 
 
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
+IMG = "https://image.tmdb.org/t/p/original"
 
 
 @Client.on_message(filters.command("img"))
 async def img(client, message):
 
     if len(message.command) < 2:
-        return await message.reply_text(
-            "❌ Use:\n/img movie year"
-        )
+        return await message.reply_text("❌ Use:\n/img movie name year")
 
     query = " ".join(message.command[1:])
 
-    wait = await message.reply_text(
-        "🔎 Fetching Posters..."
-    )
+    status = await message.reply_text("🔎 Fetching Images...")
+
 
     try:
         async with aiohttp.ClientSession() as session:
 
-            search = (
+            url = (
                 "https://api.themoviedb.org/3/search/multi"
                 f"?api_key={TMDB_API}&query={query}"
             )
 
-            async with session.get(search) as r:
+            async with session.get(url) as r:
                 data = await r.json()
 
 
             if not data.get("results"):
-                return await wait.edit("❌ Not Found")
+                return await status.edit("❌ Not Found")
 
 
             item = data["results"][0]
 
-            media = item.get("media_type")
+            typ = item.get("media_type")
 
-            if media not in ["movie", "tv"]:
-                media = "movie"
+            if typ not in ["movie", "tv"]:
+                typ = "movie"
 
 
-            img_api = (
-                f"https://api.themoviedb.org/3/"
-                f"{media}/{item['id']}/images"
-                f"?api_key={TMDB_API}"
+            detail = (
+                f"https://api.themoviedb.org/3/{typ}/"
+                f"{item['id']}/images?api_key={TMDB_API}"
             )
 
-            async with session.get(img_api) as r:
+
+            async with session.get(detail) as r:
                 imgs = await r.json()
 
 
 
-        base = "https://image.tmdb.org/t/p/original"
-
-        posters = []
+        pics = []
 
 
+        # Poster
         if item.get("poster_path"):
-            posters.append(
-                base + item["poster_path"]
-            )
+            pics.append(IMG + item["poster_path"])
 
 
-        for p in imgs.get("posters", [])[:40]:
-            posters.append(
-                base + p["file_path"]
-            )
+        # Backdrops
+        for x in imgs.get("backdrops", []):
+            pics.append(IMG + x["file_path"])
 
 
-        posters = list(dict.fromkeys(posters))[:20]
+        # More posters
+        for x in imgs.get("posters", []):
+            pics.append(IMG + x["file_path"])
 
 
-        if not posters:
-            return await wait.edit(
-                "❌ Posters Not Found"
-            )
+
+        pics = list(dict.fromkeys(pics))[:20]
 
 
-        await wait.edit(
-            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(posters)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+        if not pics:
+            return await status.edit("❌ Images Not Found")
+
+
+        await status.edit(
+            f"⬆️ Uploading {len(pics)} images to Telegram...\n\n"
+            f"🖼 Source: @Patrick_Botz"
         )
 
 
-        caption = f"""
-🖼 **IMAGES FOR:** {query}
+        for i in range(0, len(pics), 10):
 
-• **SOURCE:** @Patrick_Botz
-"""
+            media = [
+                InputMediaPhoto(x)
+                for x in pics[i:i+10]
+            ]
 
+            await message.reply_media_group(media)
 
-        for i in range(0, len(posters), 10):
-
-            album = []
-
-            for x in posters[i:i+10]:
-
-                album.append(
-                    InputMediaPhoto(
-                        x,
-                        caption=caption if len(album)==0 else None
-                    )
-                )
+            if i + 10 < len(pics):
+                await asyncio.sleep(3)
 
 
-            await client.send_media_group(
-                chat_id=message.chat.id,
-                media=album
-            )
-
-            await asyncio.sleep(3)
-
-
-        await wait.delete()
+        await status.delete()
 
 
     except Exception as e:
-
-        await wait.edit(
+        await status.edit(
             f"❌ RESULT ERROR\n\n{e}"
         )
