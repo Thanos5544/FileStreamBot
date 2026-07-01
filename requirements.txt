@@ -13,3 +13,4 @@ pillow
 pyrogram
 tgcrypto
 yt-dlp -U
+ffmpeg-python
