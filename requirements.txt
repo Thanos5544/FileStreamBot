@@ -1,4 +1,5 @@
 aiohttp
+aiohttp
 pyrofork
 python-dotenv
 tgcrypto
@@ -7,9 +8,3 @@ aiofiles
 dnspython
 requests
 jinja2
-psutil
-pillow
-pyrogram
-tgcrypto
-yt-dlp
-ffmpeg-python
