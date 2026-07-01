@@ -64,6 +64,7 @@ async def img(client, message):
                         x.get("release_date")
                         or x.get("first_air_date")
                     )
+
                     if date and date.startswith(year):
                         movie = x
                         break
@@ -112,7 +113,6 @@ async def img(client, message):
                 )
 
 
-        # 30 images
         images = list(dict.fromkeys(images))[:30]
 
 
@@ -132,9 +132,7 @@ async def img(client, message):
             for img in images[i:i+10]:
 
                 album.append(
-                    InputMediaPhoto(
-                        media=img
-                    )
+                    InputMediaPhoto(media=img)
                 )
 
 
@@ -146,7 +144,6 @@ async def img(client, message):
                 )
 
                 album[0].parse_mode = "html"
-
                 first = False
 
 
@@ -172,5 +169,4 @@ async def img(client, message):
     except Exception as e:
 
         print(e)
-
         await msg.delete()
