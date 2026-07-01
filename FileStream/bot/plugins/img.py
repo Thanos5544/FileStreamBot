@@ -4,145 +4,152 @@ import aiohttp
 import re
 import asyncio
 
+
 TMDB_API = "18303910643c603ebb9e370f2f49db56"
+
 
 @Client.on_message(filters.command("img"))
 async def img(client, message):
 
-if len(message.command) < 2:  
-    return await message.reply_text(  
-        "❌ Use:\n/img movie name"  
-    )  
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "❌ Use:\n/img movie name year"
+        )
 
-name = " ".join(message.command[1:])  
+    name = " ".join(message.command[1:])
 
-msg = await message.reply_text(  
-    "🔎 Fetching HD Images..."  
-)  
+    msg = await message.reply_text(
+        "🔎 Fetching HD Images..."
+    )
 
-try:  
+    try:
 
-    year = None  
-    match = re.search(r"(19|20)\d{2}", name)  
+        year = None
+        match = re.search(r"(19|20)\d{2}", name)
 
-    if match:  
-        year = match.group()  
-        search_name = name.replace(year, "").strip()  
-    else:  
-        search_name = name  
-
-
-    async with aiohttp.ClientSession() as session:  
-
-        search_url = (  
-            "https://api.themoviedb.org/3/search/multi"  
-            f"?api_key={TMDB_API}&query={search_name}"  
-        )  
-
-        async with session.get(search_url) as resp:  
-            search = await resp.json()  
+        if match:
+            year = match.group()
+            search_name = name.replace(year, "").strip()
+        else:
+            search_name = name
 
 
-        results = [  
-            x for x in search.get("results", [])  
-            if x.get("media_type") in ["movie","tv"]  
-        ]  
+        async with aiohttp.ClientSession() as session:
+
+            search_url = (
+                "https://api.themoviedb.org/3/search/multi"
+                f"?api_key={TMDB_API}&query={search_name}"
+            )
+
+            async with session.get(search_url) as resp:
+                search = await resp.json()
 
 
-        if not results:  
-            return await msg.edit("❌ Not found")  
+            results = [
+                x for x in search.get("results", [])
+                if x.get("media_type") in ["movie", "tv"]
+            ]
 
 
-        movie = results[0]  
+            if not results:
+                return await msg.edit("❌ Not found")
 
 
-        if year:  
-            for x in results:  
-                date = (  
-                    x.get("release_date")  
-                    or x.get("first_air_date")  
-                )  
-                if date and date.startswith(year):  
-                    movie = x  
-                    break  
+            movie = results[0]
 
 
-        media_type = movie.get("media_type","movie")  
-        movie_id = movie["id"]  
+            if year:
+                for x in results:
+                    date = (
+                        x.get("release_date")
+                        or x.get("first_air_date")
+                    )
+
+                    if date and date.startswith(year):
+                        movie = x
+                        break
 
 
-        image_url = (  
-            f"https://api.themoviedb.org/3/"  
-            f"{media_type}/{movie_id}/images"  
-            f"?api_key={TMDB_API}"  
-        )  
+            media_type = movie.get("media_type", "movie")
+            movie_id = movie["id"]
 
 
-        async with session.get(image_url) as resp:  
-            data = await resp.json()  
+            image_url = (
+                f"https://api.themoviedb.org/3/"
+                f"{media_type}/{movie_id}/images"
+                f"?api_key={TMDB_API}"
+            )
+
+
+            async with session.get(image_url) as resp:
+                data = await resp.json()
 
 
 
-    images = []  
+        images = []
 
 
-    # same old style  
-    if movie.get("poster_path"):  
-        images.append(  
-            "https://image.tmdb.org/t/p/original"  
-            + movie["poster_path"]  
-        )  
+        if movie.get("poster_path"):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + movie["poster_path"]
+            )
 
 
-    if movie.get("backdrop_path"):  
-        images.append(  
-            "https://image.tmdb.org/t/p/original"  
-            + movie["backdrop_path"]  
-        )  
+        if movie.get("backdrop_path"):
+            images.append(
+                "https://image.tmdb.org/t/p/original"
+                + movie["backdrop_path"]
+            )
 
 
-    for x in data.get("backdrops", []):  
-        images.append(  
-            "https://image.tmdb.org/t/p/original"  
-            + x["file_path"]  
-        )  
+        for x in data.get("backdrops", []):
+
+            if x.get("file_path"):
+                images.append(
+                    "https://image.tmdb.org/t/p/original"
+                    + x["file_path"]
+                )
 
 
-    images = list(dict.fromkeys(images))[:30]  
+        images = list(dict.fromkeys(images))[:30]
 
 
-    await msg.edit(  
-        f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(images)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."  
-    )  
+        await msg.edit(
+            f"⬆️ Uᴘʟᴏᴀᴅɪɴɢ {len(images)} ɪᴍᴀɢᴇs ᴛᴏ Tᴇʟᴇɢʀᴀᴍ..."
+        )
 
 
-    for i in range(0, len(images), 10):  
+        for i in range(0, len(images), 10):
 
-        album = []  
-
-        for img in images[i:i+10]:  
-            album.append(  
-                InputMediaPhoto(media=img)  
-            )  
+            album = []
 
 
-        try:  
-            await client.send_media_group(  
-                chat_id=message.chat.id,  
-                media=album,  
-                reply_to_message_id=message.id  
-            )  
+            for img in images[i:i+10]:
 
-        except Exception as e:  
-            print("MEDIA ERROR:", e)  
+                album.append(
+                    InputMediaPhoto(media=img)
+                )
 
 
-        await asyncio.sleep(1)  
+            try:
+                await client.send_media_group(
+                    chat_id=message.chat.id,
+                    media=album,
+                    reply_to_message_id=message.id
+                )
+
+            except Exception as e:
+                print("MEDIA ERROR:", e)
 
 
-    await msg.delete()  
+            await asyncio.sleep(1)
 
 
-except Exception as e:  
-    print(e)  
-    await msg.delete()
+        await msg.delete()
+
+
+    except Exception as e:
+
+        print(e)
+        await msg.delete()
