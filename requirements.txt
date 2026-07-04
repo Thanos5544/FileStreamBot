@@ -8,5 +8,4 @@ dnspython
 requests
 jinja2
 psutil
-pyrogram>=2.0.106
 TgCrypto 
