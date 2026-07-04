@@ -1,6 +1,5 @@
 import time
 import math
-import random
 import logging
 import mimetypes
 import traceback
@@ -62,34 +61,24 @@ async def stream_handler(request: web.Request):
         logging.debug(traceback.format_exc())
         raise web.HTTPInternalServerError(text=str(e))
 
-# Class cache disable kar diya for true parallel
-# class_cache = {}
+class_cache = {}
 
 async def media_streamer(request: web.Request, db_id: str):
     range_header = request.headers.get("Range", 0)
     
-    # ================== BETTER LOAD BALANCING ==================
-    # Sab bots mein se random select (true parallel distribution)
-    if len(multi_clients) > 1:
-        # Sabse kam loaded 3 bots
-        sorted_bots = sorted(work_loads.items(), key=lambda x: x[1])
-        top_bots = [k for k, v in sorted_bots[:3]]
-        index = random.choice(top_bots)
-    else:
-        index = list(multi_clients.keys())[0]
-    
+    index = min(work_loads, key=work_loads.get)
     faster_client = multi_clients[index]
-    # ===========================================================
     
     if Telegram.MULTI_CLIENT:
         logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR',request.remote)}")
 
-    # ================== NO CACHE - FRESH INSTANCE ==================
-    # Har request ke liye naya ByteStreamer instance
-    tg_connect = utils.ByteStreamer(faster_client)
-    logging.debug(f"Created fresh ByteStreamer object for client {index}")
-    # ================================================================
-    
+    if faster_client in class_cache:
+        tg_connect = class_cache[faster_client]
+        logging.debug(f"Using cached ByteStreamer object for client {index}")
+    else:
+        logging.debug(f"Creating new ByteStreamer object for client {index}")
+        tg_connect = utils.ByteStreamer(faster_client)
+        class_cache[faster_client] = tg_connect
     logging.debug("before calling get_file_properties")
     file_id = await tg_connect.get_file_properties(db_id, multi_clients)
     logging.debug("after calling get_file_properties")
@@ -111,10 +100,7 @@ async def media_streamer(request: web.Request, db_id: str):
             headers={"Content-Range": f"bytes */{file_size}"},
         )
 
-    # ================== SMALLER CHUNKS FOR PARALLEL ==================
-    chunk_size = 1024 * 1024   # 1 MB (Telegram max)
-    # ================================================================
-    
+    chunk_size = 1024 * 1024
     until_bytes = min(until_bytes, file_size - 1)
 
     offset = from_bytes - (from_bytes % chunk_size)
@@ -134,8 +120,8 @@ async def media_streamer(request: web.Request, db_id: str):
     if not mime_type:
         mime_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
 
-    if "video/" in mime_type or "audio/" in mime_type:
-        disposition = "inline"
+    # if "video/" in mime_type or "audio/" in mime_type:
+    #     disposition = "inline"
 
     return web.Response(
         status=206 if range_header else 200,
@@ -146,7 +132,5 @@ async def media_streamer(request: web.Request, db_id: str):
             "Content-Length": str(req_length),
             "Content-Disposition": f'{disposition}; filename="{file_name}"',
             "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=3600",
-            "Connection": "keep-alive",
         },
     )
