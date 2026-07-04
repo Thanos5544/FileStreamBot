@@ -5,7 +5,7 @@ import uuid
 import asyncio
 import aiohttp
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, StopPropagation
 from pyrogram.types import (
     Message,
     CallbackQuery,
@@ -21,7 +21,7 @@ TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
 IMG_CACHE = {}
-CACHE_TIME = 1800  # 30 minutes
+CACHE_TIME = 1800
 PAGE_SIZE = 10
 
 
@@ -261,15 +261,12 @@ def make_categories(movie, data):
         "backdrops": []
     }
 
-    # Main poster
     if movie.get("poster_path"):
         categories["posters_all"].append(tmdb_img_url(movie["poster_path"]))
 
-    # Main backdrop ko landscape me daal rahe
     if movie.get("backdrop_path"):
         categories["landscape"].append(tmdb_img_url(movie["backdrop_path"]))
 
-    # Posters
     for img in posters:
         url = tmdb_img_url(img.get("file_path"))
         if not url:
@@ -285,7 +282,6 @@ def make_categories(movie, data):
         if lang == "hi":
             categories["posters_hi"].append(url)
 
-    # Landscape aur Backdrops split
     for img in backdrops_data:
         url = tmdb_img_url(img.get("file_path"))
         if not url:
@@ -293,14 +289,11 @@ def make_categories(movie, data):
 
         lang = img.get("iso_639_1")
 
-        # no language/null = clean landscape/wallpaper
         if lang is None:
             categories["landscape"].append(url)
         else:
-            # en/hi/other language = text/title backdrop
             categories["backdrops"].append(url)
 
-    # Logos
     for img in logos:
         url = tmdb_img_url(img.get("file_path"))
         if url:
@@ -335,7 +328,6 @@ async def send_images(client, chat_id, images, reply_to_message_id=None):
         except Exception as e:
             print("ALBUM SEND ERROR:", e)
 
-            # Agar album fail ho, single-single send karega
             for url in chunk:
                 try:
                     await client.send_photo(
@@ -411,9 +403,7 @@ async def img(client: Client, message: Message):
 
         categories = make_categories(movie, data)
 
-        available_categories = {
-            k: v for k, v in categories.items() if v
-        }
+        available_categories = {k: v for k, v in categories.items() if v}
 
         if not available_categories:
             return await msg.edit_text("❌ Is movie ke images nahi mile.")
@@ -446,219 +436,261 @@ async def img(client: Client, message: Message):
         )
 
 
-@Client.on_callback_query(cb_starts("imgcat|"), group=-1)
+@Client.on_callback_query(cb_starts("imgcat|"), group=-999)
 async def img_category(client: Client, query: CallbackQuery):
-    cleanup_cache()
-
     try:
-        _, token, category = query.data.split("|")
-    except Exception:
-        return await query.answer("Invalid button.", show_alert=True)
+        cleanup_cache()
 
-    data = IMG_CACHE.get(token)
+        try:
+            _, token, category = query.data.split("|")
+        except Exception:
+            await query.answer("Invalid button.", show_alert=True)
+            return
 
-    if not data:
-        return await query.answer(
-            "Expired ho gaya. Dobara /img command use karo.",
-            show_alert=True
-        )
+        data = IMG_CACHE.get(token)
 
-    if query.from_user.id != data["user_id"]:
-        return await query.answer(
-            "Ye buttons tumhare liye nahi hain bro.",
-            show_alert=True
-        )
+        if not data:
+            await query.answer(
+                "Expired ho gaya. Dobara /img command use karo.",
+                show_alert=True
+            )
+            return
 
-    images = data["categories"].get(category, [])
+        if query.from_user.id != data["user_id"]:
+            await query.answer(
+                "Ye buttons tumhare liye nahi hain bro.",
+                show_alert=True
+            )
+            return
 
-    if not images:
-        return await query.answer(
-            "Is category me images nahi hain.",
-            show_alert=True
-        )
+        images = data["categories"].get(category, [])
 
-    page = 0
-    total = len(images)
+        if not images:
+            await query.answer(
+                "Is category me images nahi hain.",
+                show_alert=True
+            )
+            return
 
-    await query.answer(category_title(category))
-
-    await query.message.edit_text(
-        page_text(data["movie"], category, page, total),
-        reply_markup=build_page_buttons(token, category, page, total)
-    )
-
-
-@Client.on_callback_query(cb_starts("imgpage|"), group=-1)
-async def img_page(client: Client, query: CallbackQuery):
-    cleanup_cache()
-
-    try:
-        _, token, category, page = query.data.split("|")
-        page = int(page)
-    except Exception:
-        return await query.answer("Invalid button.", show_alert=True)
-
-    data = IMG_CACHE.get(token)
-
-    if not data:
-        return await query.answer(
-            "Expired ho gaya. Dobara /img command use karo.",
-            show_alert=True
-        )
-
-    if query.from_user.id != data["user_id"]:
-        return await query.answer(
-            "Ye buttons tumhare liye nahi hain bro.",
-            show_alert=True
-        )
-
-    images = data["categories"].get(category, [])
-    total = len(images)
-
-    if total == 0:
-        return await query.answer("Images nahi mili.", show_alert=True)
-
-    total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-
-    if page < 0:
         page = 0
+        total = len(images)
 
-    if page >= total_pages:
-        page = total_pages - 1
+        await query.answer(category_title(category))
 
-    await query.answer(f"Page {page + 1}")
+        await query.message.edit_text(
+            page_text(data["movie"], category, page, total),
+            reply_markup=build_page_buttons(token, category, page, total)
+        )
 
-    await query.message.edit_text(
-        page_text(data["movie"], category, page, total),
-        reply_markup=build_page_buttons(token, category, page, total)
-    )
+    finally:
+        raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("imgsend|"), group=-1)
+@Client.on_callback_query(cb_starts("imgpage|"), group=-999)
+async def img_page(client: Client, query: CallbackQuery):
+    try:
+        cleanup_cache()
+
+        try:
+            _, token, category, page = query.data.split("|")
+            page = int(page)
+        except Exception:
+            await query.answer("Invalid button.", show_alert=True)
+            return
+
+        data = IMG_CACHE.get(token)
+
+        if not data:
+            await query.answer(
+                "Expired ho gaya. Dobara /img command use karo.",
+                show_alert=True
+            )
+            return
+
+        if query.from_user.id != data["user_id"]:
+            await query.answer(
+                "Ye buttons tumhare liye nahi hain bro.",
+                show_alert=True
+            )
+            return
+
+        images = data["categories"].get(category, [])
+        total = len(images)
+
+        if total == 0:
+            await query.answer("Images nahi mili.", show_alert=True)
+            return
+
+        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+
+        if page < 0:
+            page = 0
+
+        if page >= total_pages:
+            page = total_pages - 1
+
+        await query.answer(f"Page {page + 1}")
+
+        await query.message.edit_text(
+            page_text(data["movie"], category, page, total),
+            reply_markup=build_page_buttons(token, category, page, total)
+        )
+
+    finally:
+        raise StopPropagation
+
+
+@Client.on_callback_query(cb_starts("imgsend|"), group=-999)
 async def img_send(client: Client, query: CallbackQuery):
-    cleanup_cache()
-
     try:
-        _, token, category, page = query.data.split("|")
-        page = int(page)
-    except Exception:
-        return await query.answer("Invalid button.", show_alert=True)
+        cleanup_cache()
 
-    data = IMG_CACHE.get(token)
+        try:
+            _, token, category, page = query.data.split("|")
+            page = int(page)
+        except Exception:
+            await query.answer("Invalid button.", show_alert=True)
+            return
 
-    if not data:
-        return await query.answer(
-            "Expired ho gaya. Dobara /img command use karo.",
-            show_alert=True
-        )
+        data = IMG_CACHE.get(token)
 
-    if query.from_user.id != data["user_id"]:
-        return await query.answer(
-            "Ye buttons tumhare liye nahi hain bro.",
-            show_alert=True
-        )
+        if not data:
+            await query.answer(
+                "Expired ho gaya. Dobara /img command use karo.",
+                show_alert=True
+            )
+            return
 
-    images = data["categories"].get(category, [])
-    total = len(images)
+        if query.from_user.id != data["user_id"]:
+            await query.answer(
+                "Ye buttons tumhare liye nahi hain bro.",
+                show_alert=True
+            )
+            return
 
-    if total == 0:
-        return await query.answer("Images nahi mili.", show_alert=True)
+        images = data["categories"].get(category, [])
+        total = len(images)
 
-    start = page * PAGE_SIZE
-    end = min(start + PAGE_SIZE, total)
+        if total == 0:
+            await query.answer("Images nahi mili.", show_alert=True)
+            return
 
-    selected = images[start:end]
+        start = page * PAGE_SIZE
+        end = min(start + PAGE_SIZE, total)
 
-    if not selected:
-        return await query.answer("Is page me images nahi hain.", show_alert=True)
+        selected = images[start:end]
 
-    await query.answer(f"Sending {len(selected)} images...")
+        if not selected:
+            await query.answer("Is page me images nahi hain.", show_alert=True)
+            return
 
-    # IMPORTANT:
-    # Yahan query.message edit/delete nahi kar rahe.
-    # Buttons wala message same rahega.
-    status = await query.message.reply_text(
-        f"⬆️ Uploading **{len(selected)}** images...\n\n"
-        f"🎭 Category: **{category_title(category)}**\n"
-        f"🖼 Images: **{start + 1}-{end}**"
-    )
+        await query.answer(f"Sending {len(selected)} images...")
 
-    try:
-        await send_images(
-            client=client,
+        # IMPORTANT:
+        # Send pe button wala message edit/delete nahi hoga.
+        # Sirf ek alag status message jayega.
+        status = await client.send_message(
             chat_id=query.message.chat.id,
-            images=selected,
-            reply_to_message_id=data.get("reply_to")
+            text=(
+                f"⬆️ Uploading **{len(selected)}** images...\n\n"
+                f"🎭 Category: **{category_title(category)}**\n"
+                f"🖼 Images: **{start + 1}-{end}**"
+            ),
+            reply_to_message_id=query.message.id
         )
 
-        await status.edit_text(
-            f"✅ Sent **{len(selected)}** images.\n\n"
-            f"Buttons wala message upar hai.\n"
-            f"Next/Prev se aur images bhej sakte ho."
-        )
+        try:
+            await send_images(
+                client=client,
+                chat_id=query.message.chat.id,
+                images=selected,
+                reply_to_message_id=data.get("reply_to")
+            )
 
-    except Exception as e:
-        print("SEND ERROR:", e)
-        await status.edit_text(
-            "❌ Images send nahi hui.\n\n"
-            f"`{str(e)[:900]}`"
-        )
+            await status.edit_text(
+                f"✅ Sent **{len(selected)}** images.\n\n"
+                f"Button wala message delete nahi hoga.\n"
+                f"Next/Prev se aur images bhej sakte ho."
+            )
+
+        except Exception as e:
+            print("SEND ERROR:", e)
+            await status.edit_text(
+                "❌ Images send nahi hui.\n\n"
+                f"`{str(e)[:900]}`"
+            )
+
+    finally:
+        raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("imgback|"), group=-1)
+@Client.on_callback_query(cb_starts("imgback|"), group=-999)
 async def img_back(client: Client, query: CallbackQuery):
-    cleanup_cache()
-
     try:
-        _, token = query.data.split("|")
-    except Exception:
-        return await query.answer("Invalid button.", show_alert=True)
+        cleanup_cache()
 
-    data = IMG_CACHE.get(token)
+        try:
+            _, token = query.data.split("|")
+        except Exception:
+            await query.answer("Invalid button.", show_alert=True)
+            return
 
-    if not data:
-        return await query.answer(
-            "Expired ho gaya. Dobara /img command use karo.",
-            show_alert=True
+        data = IMG_CACHE.get(token)
+
+        if not data:
+            await query.answer(
+                "Expired ho gaya. Dobara /img command use karo.",
+                show_alert=True
+            )
+            return
+
+        if query.from_user.id != data["user_id"]:
+            await query.answer(
+                "Ye buttons tumhare liye nahi hain bro.",
+                show_alert=True
+            )
+            return
+
+        movie = data["movie"]
+        categories = data["categories"]
+
+        title = get_title(movie)
+        movie_year = get_year(movie)
+
+        await query.answer("Categories")
+
+        await query.message.edit_text(
+            f"🎬 **{title}** ({movie_year})\n\n"
+            f"Images category select karo:",
+            reply_markup=build_category_buttons(token, categories)
         )
 
-    if query.from_user.id != data["user_id"]:
-        return await query.answer(
-            "Ye buttons tumhare liye nahi hain bro.",
-            show_alert=True
-        )
-
-    movie = data["movie"]
-    categories = data["categories"]
-
-    title = get_title(movie)
-    movie_year = get_year(movie)
-
-    await query.answer("Categories")
-
-    await query.message.edit_text(
-        f"🎬 **{title}** ({movie_year})\n\n"
-        f"Images category select karo:",
-        reply_markup=build_category_buttons(token, categories)
-    )
+    finally:
+        raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("imgcancel|"), group=-1)
+@Client.on_callback_query(cb_starts("imgcancel|"), group=-999)
 async def img_cancel(client: Client, query: CallbackQuery):
     try:
-        _, token = query.data.split("|")
-    except Exception:
-        return await query.answer("Invalid button.", show_alert=True)
+        try:
+            _, token = query.data.split("|")
+        except Exception:
+            await query.answer("Invalid button.", show_alert=True)
+            return
 
-    data = IMG_CACHE.get(token)
+        data = IMG_CACHE.get(token)
 
-    if data and query.from_user.id != data["user_id"]:
-        return await query.answer(
-            "Ye buttons tumhare liye nahi hain bro.",
-            show_alert=True
-        )
+        if data and query.from_user.id != data["user_id"]:
+            await query.answer(
+                "Ye buttons tumhare liye nahi hain bro.",
+                show_alert=True
+            )
+            return
 
-    IMG_CACHE.pop(token, None)
+        IMG_CACHE.pop(token, None)
 
-    await query.answer("Cancelled")
-    await query.message.edit_text("❌ Cancelled.")
+        await query.answer("Cancelled")
+        await query.message.edit_text("❌ Cancelled.")
+
+    finally:
+        raise StopPropagation
