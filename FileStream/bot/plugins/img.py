@@ -261,11 +261,11 @@ def make_categories(movie, data):
         "backdrops": []
     }
 
-    # Main poster portrait me
+    # Main poster
     if movie.get("poster_path"):
         categories["posters_all"].append(tmdb_img_url(movie["poster_path"]))
 
-    # Main backdrop clean landscape me
+    # Main backdrop ko landscape me daal rahe
     if movie.get("backdrop_path"):
         categories["landscape"].append(tmdb_img_url(movie["backdrop_path"]))
 
@@ -285,9 +285,7 @@ def make_categories(movie, data):
         if lang == "hi":
             categories["posters_hi"].append(url)
 
-    # Backdrops split:
-    # lang None/null = clean landscape/wallpaper
-    # lang en/hi/etc = text/title backdrop
+    # Landscape aur Backdrops split
     for img in backdrops_data:
         url = tmdb_img_url(img.get("file_path"))
         if not url:
@@ -295,9 +293,11 @@ def make_categories(movie, data):
 
         lang = img.get("iso_639_1")
 
+        # no language/null = clean landscape/wallpaper
         if lang is None:
             categories["landscape"].append(url)
         else:
+            # en/hi/other language = text/title backdrop
             categories["backdrops"].append(url)
 
     # Logos
@@ -335,6 +335,7 @@ async def send_images(client, chat_id, images, reply_to_message_id=None):
         except Exception as e:
             print("ALBUM SEND ERROR:", e)
 
+            # Agar album fail ho, single-single send karega
             for url in chunk:
                 try:
                     await client.send_photo(
@@ -363,8 +364,8 @@ def page_text(movie, category, page, total):
         f"🖼 Total Available: **{total}**\n\n"
         f"📄 Page: **{page + 1}/{total_pages}**\n"
         f"📌 Current Images: **{start}-{end}**\n\n"
-        f"Next se aage ke images dekh sakte ho.\n"
-        f"Send dabao to current 10 images send hongi."
+        f"📤 Send dabao to current 10 images send hongi.\n"
+        f"Next/Prev se page change kar sakte ho."
     )
 
 
@@ -571,12 +572,15 @@ async def img_send(client: Client, query: CallbackQuery):
     if not selected:
         return await query.answer("Is page me images nahi hain.", show_alert=True)
 
-    await query.answer(f"Sending {len(selected)} images")
+    await query.answer(f"Sending {len(selected)} images...")
 
-    await query.message.edit_text(
+    # IMPORTANT:
+    # Yahan query.message edit/delete nahi kar rahe.
+    # Buttons wala message same rahega.
+    status = await query.message.reply_text(
         f"⬆️ Uploading **{len(selected)}** images...\n\n"
-        f"Category: **{category_title(category)}**\n"
-        f"Images: **{start + 1}-{end}**"
+        f"🎭 Category: **{category_title(category)}**\n"
+        f"🖼 Images: **{start + 1}-{end}**"
     )
 
     try:
@@ -587,15 +591,15 @@ async def img_send(client: Client, query: CallbackQuery):
             reply_to_message_id=data.get("reply_to")
         )
 
-        await query.message.edit_text(
+        await status.edit_text(
             f"✅ Sent **{len(selected)}** images.\n\n"
-            f"Aur images bhejne hain to Next/Prev use karo.",
-            reply_markup=build_page_buttons(token, category, page, total)
+            f"Buttons wala message upar hai.\n"
+            f"Next/Prev se aur images bhej sakte ho."
         )
 
     except Exception as e:
         print("SEND ERROR:", e)
-        await query.message.edit_text(
+        await status.edit_text(
             "❌ Images send nahi hui.\n\n"
             f"`{str(e)[:900]}`"
         )
