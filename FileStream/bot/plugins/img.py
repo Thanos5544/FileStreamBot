@@ -9,7 +9,6 @@ from pyrogram import Client, filters, StopPropagation
 from pyrogram.types import (
     Message,
     CallbackQuery,
-    InputMediaPhoto,
     InlineKeyboardMarkup,
     InlineKeyboardButton
 )
@@ -36,6 +35,22 @@ def cleanup_cache():
     for token, data in list(IMG_CACHE.items()):
         if now - data.get("time", now) > CACHE_TIME:
             IMG_CACHE.pop(token, None)
+
+
+def get_bot_token(client):
+    token = (
+        os.getenv("BOT_TOKEN")
+        or os.getenv("TG_BOT_TOKEN")
+        or os.getenv("TOKEN")
+        or getattr(client, "bot_token", None)
+    )
+
+    if not token:
+        raise Exception(
+            "BOT_TOKEN env nahi mila. Koyeb me BOT_TOKEN add karo."
+        )
+
+    return token
 
 
 def tmdb_img_url(path):
@@ -261,11 +276,11 @@ def make_categories(movie, data):
         "backdrops": []
     }
 
-    # Main poster portrait me
+    # Main poster
     if movie.get("poster_path"):
         categories["posters_all"].append(tmdb_img_url(movie["poster_path"]))
 
-    # Landscape me sirf main official backdrop image
+    # Landscape me sirf main official backdrop
     if movie.get("backdrop_path"):
         categories["landscape"].append(tmdb_img_url(movie["backdrop_path"]))
 
@@ -285,7 +300,7 @@ def make_categories(movie, data):
         if lang == "hi":
             categories["posters_hi"].append(url)
 
-    # Backdrops me saare TMDB backdrops/wallpapers
+    # Backdrops me saare TMDB backdrops
     for img in backdrops_data:
         url = tmdb_img_url(img.get("file_path"))
         if not url:
@@ -305,31 +320,68 @@ def make_categories(movie, data):
     return categories
 
 
-async def send_images(client, chat_id, images, reply_to_message_id=None):
+async def send_images(client, chat_id, images, reply_to_message_id=None, message_thread_id=None):
     """
-    Duplicate avoid:
-    Agar album send fail hua to single-single fallback nahi karega.
-    Isse album + individual duplicate issue nahi aayega.
+    Album Telegram Bot API se send karega.
+    Pyrogram send_media_group use nahi hoga, isliye topics error nahi aayega.
     """
-    for i in range(0, len(images), 10):
-        chunk = images[i:i + 10]
+    bot_token = get_bot_token(client)
 
-        if len(chunk) == 1:
-            await client.send_photo(
-                chat_id=chat_id,
-                photo=chunk[0],
-                reply_to_message_id=reply_to_message_id
-            )
-        else:
-            album = [InputMediaPhoto(media=url) for url in chunk]
+    async with aiohttp.ClientSession() as session:
+        for i in range(0, len(images), 10):
+            chunk = images[i:i + 10]
 
-            await client.send_media_group(
-                chat_id=chat_id,
-                media=album,
-                reply_to_message_id=reply_to_message_id
-            )
+            # Bot API sendMediaGroup minimum 2 media maangta hai
+            if len(chunk) == 1:
+                api_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
 
-        await asyncio.sleep(1)
+                payload = {
+                    "chat_id": chat_id,
+                    "photo": chunk[0],
+                }
+
+                if reply_to_message_id:
+                    payload["reply_to_message_id"] = reply_to_message_id
+                    payload["allow_sending_without_reply"] = True
+
+                if message_thread_id:
+                    payload["message_thread_id"] = message_thread_id
+
+                async with session.post(api_url, json=payload) as resp:
+                    result = await resp.json()
+
+                    if not result.get("ok"):
+                        raise Exception(result.get("description", "Bot API photo send failed"))
+
+            else:
+                api_url = f"https://api.telegram.org/bot{bot_token}/sendMediaGroup"
+
+                media = []
+                for url in chunk:
+                    media.append({
+                        "type": "photo",
+                        "media": url
+                    })
+
+                payload = {
+                    "chat_id": chat_id,
+                    "media": media
+                }
+
+                if reply_to_message_id:
+                    payload["reply_to_message_id"] = reply_to_message_id
+                    payload["allow_sending_without_reply"] = True
+
+                if message_thread_id:
+                    payload["message_thread_id"] = message_thread_id
+
+                async with session.post(api_url, json=payload) as resp:
+                    result = await resp.json()
+
+                    if not result.get("ok"):
+                        raise Exception(result.get("description", "Bot API album send failed"))
+
+            await asyncio.sleep(1)
 
 
 def page_text(movie, category, page, total):
@@ -346,7 +398,7 @@ def page_text(movie, category, page, total):
         f"🖼 Total Available: **{total}**\n\n"
         f"📄 Page: **{page + 1}/{total_pages}**\n"
         f"📌 Current Images: **{start}-{end}**\n\n"
-        f"📤 Send dabao to current 10 images send hongi.\n"
+        f"📤 Send dabao to current 10 images album me send hongi.\n"
         f"Next/Prev se page change kar sakte ho."
     )
 
@@ -403,6 +455,7 @@ async def img(client: Client, message: Message):
             "user_id": message.from_user.id if message.from_user else 0,
             "chat_id": message.chat.id,
             "reply_to": message.id,
+            "message_thread_id": getattr(message, "message_thread_id", None),
             "movie": movie,
             "categories": categories,
             "time": time.time()
@@ -591,7 +644,8 @@ async def img_send(client: Client, query: CallbackQuery):
                 client=client,
                 chat_id=query.message.chat.id,
                 images=selected,
-                reply_to_message_id=data.get("reply_to")
+                reply_to_message_id=data.get("reply_to"),
+                message_thread_id=data.get("message_thread_id")
             )
 
             await status.edit_text(
