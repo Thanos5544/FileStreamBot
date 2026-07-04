@@ -403,7 +403,7 @@ def page_text(movie, category, page, total):
     )
 
 
-@Client.on_message(filters.command("img"))
+@Client.on_message(filters.command("img") & (filters.private | filters.group))
 async def img(client: Client, message: Message):
     cleanup_cache()
 
