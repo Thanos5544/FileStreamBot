@@ -261,12 +261,15 @@ def make_categories(movie, data):
         "backdrops": []
     }
 
+    # Main poster portrait me
     if movie.get("poster_path"):
         categories["posters_all"].append(tmdb_img_url(movie["poster_path"]))
 
+    # Landscape me sirf main official backdrop image
     if movie.get("backdrop_path"):
         categories["landscape"].append(tmdb_img_url(movie["backdrop_path"]))
 
+    # Posters
     for img in posters:
         url = tmdb_img_url(img.get("file_path"))
         if not url:
@@ -282,18 +285,15 @@ def make_categories(movie, data):
         if lang == "hi":
             categories["posters_hi"].append(url)
 
+    # Backdrops me saare TMDB backdrops/wallpapers
     for img in backdrops_data:
         url = tmdb_img_url(img.get("file_path"))
         if not url:
             continue
 
-        lang = img.get("iso_639_1")
+        categories["backdrops"].append(url)
 
-        if lang is None:
-            categories["landscape"].append(url)
-        else:
-            categories["backdrops"].append(url)
-
+    # Logos
     for img in logos:
         url = tmdb_img_url(img.get("file_path"))
         if url:
@@ -306,38 +306,28 @@ def make_categories(movie, data):
 
 
 async def send_images(client, chat_id, images, reply_to_message_id=None):
+    """
+    Duplicate avoid:
+    Agar album send fail hua to single-single fallback nahi karega.
+    Isse album + individual duplicate issue nahi aayega.
+    """
     for i in range(0, len(images), 10):
         chunk = images[i:i + 10]
 
-        try:
-            if len(chunk) == 1:
-                await client.send_photo(
-                    chat_id=chat_id,
-                    photo=chunk[0],
-                    reply_to_message_id=reply_to_message_id
-                )
-            else:
-                album = [InputMediaPhoto(media=url) for url in chunk]
+        if len(chunk) == 1:
+            await client.send_photo(
+                chat_id=chat_id,
+                photo=chunk[0],
+                reply_to_message_id=reply_to_message_id
+            )
+        else:
+            album = [InputMediaPhoto(media=url) for url in chunk]
 
-                await client.send_media_group(
-                    chat_id=chat_id,
-                    media=album,
-                    reply_to_message_id=reply_to_message_id
-                )
-
-        except Exception as e:
-            print("ALBUM SEND ERROR:", e)
-
-            for url in chunk:
-                try:
-                    await client.send_photo(
-                        chat_id=chat_id,
-                        photo=url,
-                        reply_to_message_id=reply_to_message_id
-                    )
-                    await asyncio.sleep(0.5)
-                except Exception as x:
-                    print("SINGLE PHOTO ERROR:", x)
+            await client.send_media_group(
+                chat_id=chat_id,
+                media=album,
+                reply_to_message_id=reply_to_message_id
+            )
 
         await asyncio.sleep(1)
 
@@ -402,7 +392,6 @@ async def img(client: Client, message: Message):
             data = await fetch_images(session, media_type, movie_id)
 
         categories = make_categories(movie, data)
-
         available_categories = {k: v for k, v in categories.items() if v}
 
         if not available_categories:
@@ -586,9 +575,7 @@ async def img_send(client: Client, query: CallbackQuery):
 
         await query.answer(f"Sending {len(selected)} images...")
 
-        # IMPORTANT:
-        # Send pe button wala message edit/delete nahi hoga.
-        # Sirf ek alag status message jayega.
+        # Button wala message edit/delete nahi hoga
         status = await client.send_message(
             chat_id=query.message.chat.id,
             text=(
