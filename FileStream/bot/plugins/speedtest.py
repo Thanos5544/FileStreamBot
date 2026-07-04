@@ -5,70 +5,99 @@ from pyrogram import filters
 from FileStream.bot import FileStream
 
 
+TEST_URLS = [
+    ("Hetzner (Germany)", "https://speed.hetzner.de/100MB.bin"),
+    ("OVH (France)", "https://proof.ovh.net/files/100Mb.dat"),
+    ("Cachefly (Global)", "https://cachefly.cachefly.net/100mb.test"),
+    ("Linode (Global)", "https://speedtest.newark.linode.com/100MB-newark.bin"),
+]
+
+
 @FileStream.on_message(filters.command("speedtest"))
 async def speed_test(_, m):
-    msg = await m.reply_text("⚡ **Sᴘᴇᴇᴅ Tᴇsᴛ Sᴛᴀʀᴛɪɴɢ...**")
+    msg = await m.reply_text("⚡ **Sᴘᴇᴇᴅ Tᴇsᴛ Sᴛᴀʀᴛɪɴɢ...**\n\nTᴇsᴛɪɴɢ ᴍᴜʟᴛɪᴘʟᴇ sᴇʀᴠᴇʀs...")
     
-    url = "https://speed.cloudflare.com/__down?bytes=524288000"  # 500 MB
+    results = []
     
-    try:
-        start_time = time.time()
-        total_bytes = 0
-        last_update = time.time()
-        max_speed = 0
-        speed_samples = []
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                async for chunk in resp.content.iter_chunked(1024 * 1024):
-                    total_bytes += len(chunk)
-                    current_time = time.time()
-                    elapsed = current_time - start_time
+    for name, url in TEST_URLS:
+        try:
+            await msg.edit_text(
+                f"⚡ **Sᴘᴇᴇᴅ Tᴇsᴛ Rᴜɴɴɪɴɢ**\n\n"
+                f"🌐 Tᴇsᴛɪɴɢ: **{name}**\n"
+                f"⏳ Pʟᴇᴀsᴇ ᴡᴀɪᴛ..."
+            )
+            
+            start_time = time.time()
+            total_bytes = 0
+            
+            timeout = aiohttp.ClientTimeout(total=60, connect=10)
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        results.append({
+                            "name": name,
+                            "error": f"HTTP {resp.status}"
+                        })
+                        continue
                     
-                    # Update every 2 seconds
-                    if current_time - last_update >= 2:
-                        current_speed = (total_bytes / 1024 / 1024) / elapsed
-                        downloaded_mb = round(total_bytes / 1024 / 1024, 2)
+                    async for chunk in resp.content.iter_chunked(1024 * 64):
+                        total_bytes += len(chunk)
                         
-                        if current_speed > max_speed:
-                            max_speed = current_speed
-                        
-                        speed_samples.append(current_speed)
-                        
-                        try:
-                            await msg.edit_text(
-                                f"⚡ **Lɪᴠᴇ Sᴘᴇᴇᴅ Tᴇsᴛ**\n\n"
-                                f"📥 **Downloaded:** `{downloaded_mb} MB`\n"
-                                f"⚡ **Current:** `{round(current_speed, 2)} MB/s`\n"
-                                f"🏆 **Max:** `{round(max_speed, 2)} MB/s`\n"
-                                f"⏱ **Time:** `{round(elapsed, 1)} sec`\n\n"
-                                f"⏳ _Tᴇsᴛɪɴɢ..._"
-                            )
-                        except:
-                            pass
-                        
-                        last_update = current_time
-                        
-                        # Stop after 30 sec or 500 MB
-                        if elapsed > 30 or total_bytes > 500 * 1024 * 1024:
+                        # Stop after 30 sec or 100 MB
+                        if time.time() - start_time > 30 or total_bytes > 100 * 1024 * 1024:
                             break
-        
-        total_time = time.time() - start_time
-        avg_speed = sum(speed_samples) / len(speed_samples) if speed_samples else 0
-        
-        # Final result
-        await msg.edit_text(
-            f"🚀 **Sᴘᴇᴇᴅ Tᴇsᴛ Cᴏᴍᴘʟᴇᴛᴇ**\n\n"
-            f"📥 **Downloaded:** `{round(total_bytes / 1024 / 1024, 2)} MB`\n"
-            f"⏱ **Duration:** `{round(total_time, 2)} sec`\n\n"
-            f"⚡ **Average Speed:** `{round(avg_speed, 2)} MB/s`\n"
-            f"🏆 **Max Speed:** **`{round(max_speed, 2)} MB/s`**\n\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"💡 _Ye Koyeb sᴇʀᴠᴇʀ ᴋɪ ᴀᴄᴛᴜᴀʟ ᴄᴀᴘᴀᴄɪᴛʏ ʜᴀɪ_\n"
-            f"🌐 _Test Server: Cloudflare Global CDN_"
-        )
-        
-    except asyncio.TimeoutError:
-        await msg.edit_text("❌ **Test Timeout** - Server slow ho sakta hai")
-    except Exception as e:
-        await msg.edit_text(f"❌ **Error:**\n`{str(e)[:200]}`")
+            
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            if duration < 0.5 or total_bytes < 1024 * 1024:
+                results.append({
+                    "name": name,
+                    "error": "Connection failed"
+                })
+                continue
+            
+            size_mb = total_bytes / 1024 / 1024
+            speed_mbps = size_mb / duration
+            
+            results.append({
+                "name": name,
+                "size": round(size_mb, 2),
+                "time": round(duration, 2),
+                "speed": round(speed_mbps, 2)
+            })
+            
+        except asyncio.TimeoutError:
+            results.append({"name": name, "error": "Timeout"})
+        except Exception as e:
+            results.append({"name": name, "error": str(e)[:40]})
+    
+    # Format results
+    text = "🚀 **Sᴘᴇᴇᴅ Tᴇsᴛ Rᴇsᴜʟᴛs**\n\n"
+    
+    max_speed = 0
+    working_tests = 0
+    
+    for r in results:
+        if "error" in r:
+            text += f"❌ **{r['name']}**\n   └ `{r['error']}`\n\n"
+        else:
+            text += f"✅ **{r['name']}**\n"
+            text += f"   ├ Size: `{r['size']} MB`\n"
+            text += f"   ├ Time: `{r['time']} sec`\n"
+            text += f"   └ Speed: **`{r['speed']} MB/s`** ⚡\n\n"
+            working_tests += 1
+            if r['speed'] > max_speed:
+                max_speed = r['speed']
+    
+    text += f"━━━━━━━━━━━━━━━━━━\n"
+    
+    if working_tests > 0:
+        text += f"🏆 **Max Speed: `{max_speed} MB/s`**\n\n"
+        text += f"💡 _Ye Kᴏʏᴇʙ ᴋɪ ᴀᴄᴛᴜᴀʟ ᴅᴏᴡɴʟᴏᴀᴅ ᴄᴀᴘᴀᴄɪᴛʏ ʜᴀɪ_"
+    else:
+        text += f"⚠️ **Sᴀʙ sᴇʀᴠᴇʀs ғᴀɪʟ ʜᴜᴇ**\n"
+        text += f"Nᴇᴛᴡᴏʀᴋ ɪssᴜᴇ ʜᴏ sᴀᴋᴛᴀ ʜᴀɪ."
+    
+    await msg.edit_text(text)
