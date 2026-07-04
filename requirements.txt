@@ -8,4 +8,3 @@ dnspython
 requests
 jinja2
 psutil
-yt-dlp
