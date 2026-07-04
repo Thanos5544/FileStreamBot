@@ -62,20 +62,21 @@ async def stream_handler(request: web.Request):
         logging.debug(traceback.format_exc())
         raise web.HTTPInternalServerError(text=str(e))
 
-class_cache = {}
+# Class cache disable kar diya for true parallel
+# class_cache = {}
 
 async def media_streamer(request: web.Request, db_id: str):
     range_header = request.headers.get("Range", 0)
     
     # ================== BETTER LOAD BALANCING ==================
-    # Sab similar loaded bots ko find karo
-    if len(work_loads) > 1:
-        min_load = min(work_loads.values())
-        available_bots = [k for k, v in work_loads.items() if v <= min_load + 2]
-        # Random se select karo for true parallel distribution
-        index = random.choice(available_bots)
+    # Sab bots mein se random select (true parallel distribution)
+    if len(multi_clients) > 1:
+        # Sabse kam loaded 3 bots
+        sorted_bots = sorted(work_loads.items(), key=lambda x: x[1])
+        top_bots = [k for k, v in sorted_bots[:3]]
+        index = random.choice(top_bots)
     else:
-        index = 0
+        index = list(multi_clients.keys())[0]
     
     faster_client = multi_clients[index]
     # ===========================================================
@@ -83,13 +84,12 @@ async def media_streamer(request: web.Request, db_id: str):
     if Telegram.MULTI_CLIENT:
         logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR',request.remote)}")
 
-    if faster_client in class_cache:
-        tg_connect = class_cache[faster_client]
-        logging.debug(f"Using cached ByteStreamer object for client {index}")
-    else:
-        logging.debug(f"Creating new ByteStreamer object for client {index}")
-        tg_connect = utils.ByteStreamer(faster_client)
-        class_cache[faster_client] = tg_connect
+    # ================== NO CACHE - FRESH INSTANCE ==================
+    # Har request ke liye naya ByteStreamer instance
+    tg_connect = utils.ByteStreamer(faster_client)
+    logging.debug(f"Created fresh ByteStreamer object for client {index}")
+    # ================================================================
+    
     logging.debug("before calling get_file_properties")
     file_id = await tg_connect.get_file_properties(db_id, multi_clients)
     logging.debug("after calling get_file_properties")
@@ -111,7 +111,10 @@ async def media_streamer(request: web.Request, db_id: str):
             headers={"Content-Range": f"bytes */{file_size}"},
         )
 
-    chunk_size = 1024 * 1024
+    # ================== SMALLER CHUNKS FOR PARALLEL ==================
+    chunk_size = 1024 * 1024   # 1 MB (Telegram max)
+    # ================================================================
+    
     until_bytes = min(until_bytes, file_size - 1)
 
     offset = from_bytes - (from_bytes % chunk_size)
@@ -146,4 +149,4 @@ async def media_streamer(request: web.Request, db_id: str):
             "Cache-Control": "public, max-age=3600",
             "Connection": "keep-alive",
         },
-                                                 )
+    )
