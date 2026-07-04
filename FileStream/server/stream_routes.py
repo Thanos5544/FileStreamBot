@@ -1,5 +1,6 @@
 import time
 import math
+import random
 import logging
 import mimetypes
 import traceback
@@ -66,8 +67,18 @@ class_cache = {}
 async def media_streamer(request: web.Request, db_id: str):
     range_header = request.headers.get("Range", 0)
     
-    index = min(work_loads, key=work_loads.get)
+    # ================== BETTER LOAD BALANCING ==================
+    # Sab similar loaded bots ko find karo
+    if len(work_loads) > 1:
+        min_load = min(work_loads.values())
+        available_bots = [k for k, v in work_loads.items() if v <= min_load + 2]
+        # Random se select karo for true parallel distribution
+        index = random.choice(available_bots)
+    else:
+        index = 0
+    
     faster_client = multi_clients[index]
+    # ===========================================================
     
     if Telegram.MULTI_CLIENT:
         logging.info(f"Client {index} is now serving {request.headers.get('X-FORWARDED-FOR',request.remote)}")
@@ -120,8 +131,8 @@ async def media_streamer(request: web.Request, db_id: str):
     if not mime_type:
         mime_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
 
-    # if "video/" in mime_type or "audio/" in mime_type:
-    #     disposition = "inline"
+    if "video/" in mime_type or "audio/" in mime_type:
+        disposition = "inline"
 
     return web.Response(
         status=206 if range_header else 200,
@@ -132,5 +143,7 @@ async def media_streamer(request: web.Request, db_id: str):
             "Content-Length": str(req_length),
             "Content-Disposition": f'{disposition}; filename="{file_name}"',
             "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+            "Connection": "keep-alive",
         },
-    )
+                                                 )
