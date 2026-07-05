@@ -19,9 +19,8 @@ import yt_dlp
 
 DOWNLOAD_DIR = "downloads/youtube"
 YT_CACHE = {}
-CACHE_TIME = 1800  # 30 minutes
+CACHE_TIME = 1800
 
-# Cookies file path
 COOKIES_FILE = "cookies.txt"
 
 YOUTUBE_REGEX = re.compile(
@@ -51,7 +50,7 @@ def get_youtube_url(text: str):
 
 
 def get_ydl_opts_base():
-    """Base yt-dlp options with cookies support"""
+    """Base options with cookies"""
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -79,24 +78,21 @@ def get_ydl_opts_base():
         },
     }
     
-    # Add cookies if file exists
     if os.path.exists(COOKIES_FILE):
         opts["cookiefile"] = COOKIES_FILE
         print(f"[YT] Using cookies from {COOKIES_FILE}")
-    else:
-        print(f"[YT] WARNING: {COOKIES_FILE} not found, may fail")
     
     return opts
 
 
 def format_size(size_bytes):
     if not size_bytes:
-        return "Unknown"
+        return "?"
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
+            return f"{size_bytes:.1f}{unit}"
         size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+    return f"{size_bytes:.1f}TB"
 
 
 def format_duration(seconds):
@@ -112,7 +108,6 @@ def format_duration(seconds):
 
 
 async def get_video_info(url: str):
-    """Fetch video info without downloading"""
     opts = get_ydl_opts_base()
     opts["skip_download"] = True
     
@@ -126,7 +121,7 @@ async def get_video_info(url: str):
 
 
 def get_available_qualities(info):
-    """Get available video qualities including 1080p"""
+    """Get available qualities - flexible detection"""
     formats = info.get("formats", [])
     qualities = {}
     
@@ -134,49 +129,51 @@ def get_available_qualities(info):
         height = f.get("height")
         vcodec = f.get("vcodec", "none")
         
-        # Skip audio-only formats
         if not height or vcodec == "none":
             continue
         
-        # Skip very low quality
         if height < 144:
             continue
         
-        # Group by height, keep best filesize info
-        if height not in qualities:
-            qualities[height] = {
-                "height": height,
+        # Round to standard heights
+        if height <= 144:
+            std = 144
+        elif height <= 240:
+            std = 240
+        elif height <= 360:
+            std = 360
+        elif height <= 480:
+            std = 480
+        elif height <= 720:
+            std = 720
+        elif height <= 1080:
+            std = 1080
+        elif height <= 1440:
+            std = 1440
+        else:
+            std = 2160
+        
+        if std not in qualities:
+            qualities[std] = {
+                "height": std,
                 "filesize": f.get("filesize") or f.get("filesize_approx"),
                 "ext": f.get("ext", "mp4"),
-                "has_audio": f.get("acodec", "none") != "none"
             }
-        else:
-            # Update filesize if better
-            if f.get("filesize") and not qualities[height]["filesize"]:
-                qualities[height]["filesize"] = f.get("filesize")
     
-    # Return sorted by quality (lowest first for buttons)
     return sorted(qualities.values(), key=lambda x: x["height"])
 
 
 def build_quality_buttons(token: str, qualities: list):
-    """Build quality selection keyboard including 1080p"""
     buttons = []
-    
-    # Show these qualities if available
     target_qualities = [144, 240, 360, 480, 720, 1080, 1440, 2160]
-    
-    available_heights = [q["height"] for q in qualities]
+    available = [q["height"] for q in qualities]
     row = []
     
     for quality in target_qualities:
-        if quality in available_heights:
+        if quality in available:
             q_data = next(q for q in qualities if q["height"] == quality)
-            
-            # Format label with size if available
             if q_data["filesize"]:
-                size_str = format_size(q_data["filesize"])
-                label = f"📥 {quality}p ({size_str})"
+                label = f"📥 {quality}p ({format_size(q_data['filesize'])})"
             else:
                 label = f"📥 {quality}p"
             
@@ -186,17 +183,13 @@ def build_quality_buttons(token: str, qualities: list):
                     callback_data=f"ytdl|{token}|{quality}"
                 )
             )
-            
-            # 2 buttons per row
             if len(row) == 2:
                 buttons.append(row)
                 row = []
     
-    # Add remaining buttons
     if row:
         buttons.append(row)
     
-    # MP3 button
     buttons.append([
         InlineKeyboardButton(
             "🎵 MP3 Audio (192 kbps)",
@@ -204,7 +197,6 @@ def build_quality_buttons(token: str, qualities: list):
         )
     ])
     
-    # Cancel button
     buttons.append([
         InlineKeyboardButton(
             "❌ Cancel",
@@ -216,20 +208,23 @@ def build_quality_buttons(token: str, qualities: list):
 
 
 async def download_video(url: str, quality: int, token: str):
-    """Download video with specific quality"""
+    """Download video - FLEXIBLE format handling"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
     opts = get_ydl_opts_base()
+    
+    # FLEXIBLE format string - multiple fallbacks
     opts.update({
         "format": (
-            f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/"
             f"bestvideo[height<={quality}]+bestaudio/"
-            f"best[height<={quality}][ext=mp4]/"
-            f"best[height<={quality}]/best"
+            f"best[height<={quality}]/"
+            f"bestvideo+bestaudio/"
+            f"best"
         ),
         "outtmpl": f"{folder}/%(title).60s.%(ext)s",
         "merge_output_format": "mp4",
+        "no_check_formats": True,
     })
     
     def _download():
@@ -240,7 +235,6 @@ async def download_video(url: str, quality: int, token: str):
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _download)
     
-    # Find downloaded file
     for f in os.listdir(folder):
         if f.endswith(('.mp4', '.mkv', '.webm')):
             return os.path.join(folder, f), info
@@ -249,13 +243,13 @@ async def download_video(url: str, quality: int, token: str):
 
 
 async def download_mp3(url: str, token: str):
-    """Download as MP3 with cookies"""
+    """Download MP3 - flexible"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
     opts = get_ydl_opts_base()
     opts.update({
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
         "outtmpl": f"{folder}/%(title).60s.%(ext)s",
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -272,7 +266,6 @@ async def download_mp3(url: str, token: str):
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _download)
     
-    # Find MP3
     for f in os.listdir(folder):
         if f.endswith('.mp3'):
             return os.path.join(folder, f), info
@@ -281,7 +274,6 @@ async def download_mp3(url: str, token: str):
 
 
 def cleanup_download(token: str):
-    """Cleanup downloaded files"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     if os.path.exists(folder):
         try:
@@ -305,13 +297,10 @@ async def yt_handler(client, message: Message):
     if not url:
         return await message.reply_text(
             "❌ **YouTube link do bhai**\n\n"
-            "**Usage:**\n"
-            "`/yt https://youtube.com/watch?v=VIDEO_ID`\n"
-            "`/ytdl https://youtu.be/VIDEO_ID`\n\n"
-            "Ya YouTube link ko reply karke `/yt` bhejo"
+            "`/yt https://youtu.be/VIDEO_ID`"
         )
     
-    msg = await message.reply_text("🔍 **Video info fetch kar raha hu...**")
+    msg = await message.reply_text("🔍 **Video info fetch...**")
     
     try:
         info = await get_video_info(url)
@@ -325,11 +314,9 @@ async def yt_handler(client, message: Message):
         
         if not qualities:
             return await msg.edit_text(
-                "❌ **Koi quality nahi mili**\n\n"
-                "Video restricted ya unsupported format."
+                "❌ **Koi quality nahi mili**"
             )
         
-        # Save to cache
         token = uuid.uuid4().hex[:10]
         YT_CACHE[token] = {
             "url": url,
@@ -345,7 +332,7 @@ async def yt_handler(client, message: Message):
             f"👤 **Channel:** `{uploader}`\n"
             f"⏱ **Duration:** `{duration}`\n"
             f"👁 **Views:** `{view_count:,}`\n\n"
-            f"📥 **Select quality to download:**"
+            f"📥 **Select quality:**"
         )
         
         await msg.edit_text(
@@ -354,28 +341,9 @@ async def yt_handler(client, message: Message):
         )
         
     except Exception as e:
-        error_msg = str(e)
-        
-        if "sign in" in error_msg.lower() or "bot" in error_msg.lower():
-            await msg.edit_text(
-                "❌ **YouTube bot detection**\n\n"
-                "Cookies expire ho gayi hongi।\n\n"
-                "Fresh cookies export karo aur update karo।\n\n"
-                f"**Error:** `{error_msg[:200]}`"
-            )
-        elif "cookies" in error_msg.lower():
-            await msg.edit_text(
-                "❌ **Cookies problem**\n\n"
-                "cookies.txt file check karo:\n"
-                "• File exist karti hai?\n"
-                "• Correct format hai?\n"
-                "• Expire to nahi hui?\n\n"
-                f"**Error:** `{error_msg[:200]}`"
-            )
-        else:
-            await msg.edit_text(
-                f"❌ **Error**\n\n`{error_msg[:400]}`"
-            )
+        await msg.edit_text(
+            f"❌ **Error**\n\n`{str(e)[:400]}`"
+        )
 
 
 @Client.on_callback_query(cb_starts("ytdl|"), group=-999)
@@ -392,17 +360,11 @@ async def ytdl_callback(client, query: CallbackQuery):
         
         data = YT_CACHE.get(token)
         if not data:
-            await query.answer(
-                "Expired. /yt dobara bhejo.",
-                show_alert=True
-            )
+            await query.answer("Expired. /yt dobara bhejo.", show_alert=True)
             return
         
         if query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye button tumhare liye nahi hai",
-                show_alert=True
-            )
+            await query.answer("Tumhare liye nahi hai bhai", show_alert=True)
             return
         
         await query.answer(f"⬇️ Downloading {quality}p...")
@@ -410,19 +372,14 @@ async def ytdl_callback(client, query: CallbackQuery):
         await query.message.edit_text(
             f"⬇️ **Downloading {quality}p...**\n\n"
             f"🎬 {data['title'][:60]}\n\n"
-            f"⏳ Please wait (1-3 minutes)..."
+            f"⏳ Please wait..."
         )
         
         try:
-            file_path, info = await download_video(
-                data["url"], quality, token
-            )
+            file_path, info = await download_video(data["url"], quality, token)
             
             if not file_path or not os.path.exists(file_path):
-                await query.message.edit_text(
-                    "❌ **Download failed**\n\n"
-                    "Try different quality."
-                )
+                await query.message.edit_text("❌ **Download failed**")
                 cleanup_download(token)
                 return
             
@@ -430,18 +387,16 @@ async def ytdl_callback(client, query: CallbackQuery):
             
             if file_size > 2000 * 1024 * 1024:
                 await query.message.edit_text(
-                    f"❌ **File too large**\n\n"
-                    f"Size: {format_size(file_size)}\n"
-                    f"Telegram limit: 2 GB\n\n"
+                    f"❌ **File too large** ({format_size(file_size)})\n\n"
                     f"Try lower quality."
                 )
                 cleanup_download(token)
                 return
             
             await query.message.edit_text(
-                f"📤 **Uploading to Telegram...**\n\n"
+                f"📤 **Uploading...**\n\n"
                 f"🎬 {data['title'][:60]}\n"
-                f"📦 Size: {format_size(file_size)}"
+                f"📦 {format_size(file_size)}"
             )
             
             try:
@@ -473,8 +428,7 @@ async def ytdl_callback(client, query: CallbackQuery):
             
         except Exception as e:
             await query.message.edit_text(
-                f"❌ **Download error**\n\n"
-                f"`{str(e)[:400]}`"
+                f"❌ **Error**\n\n`{str(e)[:400]}`"
             )
         
         finally:
@@ -493,22 +447,16 @@ async def ytmp3_callback(client, query: CallbackQuery):
         try:
             _, token = query.data.split("|")
         except Exception:
-            await query.answer("Invalid button", show_alert=True)
+            await query.answer("Invalid", show_alert=True)
             return
         
         data = YT_CACHE.get(token)
         if not data:
-            await query.answer(
-                "Expired. /yt dobara bhejo.",
-                show_alert=True
-            )
+            await query.answer("Expired", show_alert=True)
             return
         
         if query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye button tumhare liye nahi hai",
-                show_alert=True
-            )
+            await query.answer("Tumhare liye nahi hai", show_alert=True)
             return
         
         await query.answer("🎵 Downloading MP3...")
@@ -523,10 +471,7 @@ async def ytmp3_callback(client, query: CallbackQuery):
             file_path, info = await download_mp3(data["url"], token)
             
             if not file_path or not os.path.exists(file_path):
-                await query.message.edit_text(
-                    "❌ **MP3 failed**\n\n"
-                    "FFmpeg not installed ya cookies issue."
-                )
+                await query.message.edit_text("❌ **MP3 failed**")
                 cleanup_download(token)
                 return
             
@@ -535,7 +480,7 @@ async def ytmp3_callback(client, query: CallbackQuery):
             await query.message.edit_text(
                 f"📤 **Uploading MP3...**\n\n"
                 f"🎵 {data['title'][:60]}\n"
-                f"📦 Size: {format_size(file_size)}"
+                f"📦 {format_size(file_size)}"
             )
             
             bot_info = await client.get_me()
@@ -555,8 +500,7 @@ async def ytmp3_callback(client, query: CallbackQuery):
             
         except Exception as e:
             await query.message.edit_text(
-                f"❌ **MP3 error**\n\n"
-                f"`{str(e)[:400]}`"
+                f"❌ **MP3 error**\n\n`{str(e)[:400]}`"
             )
         
         finally:
@@ -573,15 +517,12 @@ async def ytcancel_callback(client, query: CallbackQuery):
         try:
             _, token = query.data.split("|")
         except Exception:
-            await query.answer("Invalid button", show_alert=True)
+            await query.answer("Invalid", show_alert=True)
             return
         
         data = YT_CACHE.get(token)
         if data and query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye button tumhare liye nahi hai",
-                show_alert=True
-            )
+            await query.answer("Tumhare liye nahi hai", show_alert=True)
             return
         
         YT_CACHE.pop(token, None)
