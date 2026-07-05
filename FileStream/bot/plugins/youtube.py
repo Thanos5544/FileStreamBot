@@ -48,12 +48,7 @@ def get_youtube_url(text: str):
 
 
 def get_cookies_path():
-    """Find cookies file"""
-    paths = [
-        "cookies.txt",
-        "/app/cookies.txt",
-        "./cookies.txt",
-    ]
+    paths = ["cookies.txt", "/app/cookies.txt", "./cookies.txt"]
     for p in paths:
         if os.path.exists(p) and os.path.getsize(p) > 100:
             return p
@@ -61,7 +56,6 @@ def get_cookies_path():
 
 
 def get_ydl_opts_base():
-    """SIMPLE base options - no fancy extractor args"""
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -80,7 +74,6 @@ def get_ydl_opts_base():
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/122.0.0.0 Safari/537.36"
             ),
-            "Accept-Language": "en-US,en;q=0.9",
         },
     }
     
@@ -114,7 +107,6 @@ def format_duration(seconds):
 
 
 async def get_video_info(url: str):
-    """Simple video info fetch"""
     opts = get_ydl_opts_base()
     opts["skip_download"] = True
     
@@ -128,7 +120,6 @@ async def get_video_info(url: str):
 
 
 def get_available_qualities(info):
-    """Get available video qualities"""
     formats = info.get("formats", [])
     qualities = {}
     
@@ -216,18 +207,14 @@ def build_quality_buttons(token: str, qualities: list):
 
 
 async def download_video(url: str, quality: int, token: str):
-    """Simple video download"""
+    """FLEXIBLE download - accepts any available format"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
     opts = get_ydl_opts_base()
     opts.update({
-        "format": (
-            f"bestvideo[height<={quality}]+bestaudio/"
-            f"best[height<={quality}]/"
-            f"bestvideo+bestaudio/"
-            f"best"
-        ),
+        # SIMPLE FLEXIBLE FORMAT
+        "format": f"best[height<={quality}]/best",
         "outtmpl": f"{folder}/%(title).60s.%(ext)s",
         "merge_output_format": "mp4",
     })
@@ -240,9 +227,11 @@ async def download_video(url: str, quality: int, token: str):
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _download)
     
+    # Find any downloaded file
     for f in os.listdir(folder):
-        if f.endswith(('.mp4', '.mkv', '.webm')):
-            return os.path.join(folder, f), info
+        full_path = os.path.join(folder, f)
+        if os.path.isfile(full_path):
+            return full_path, info
     
     return None, info
 
@@ -302,11 +291,10 @@ async def yt_handler(client, message: Message):
     if not url:
         return await message.reply_text(
             "❌ **YouTube link do bhai**\n\n"
-            "**Usage:**\n"
             "`/yt https://youtu.be/VIDEO_ID`"
         )
     
-    msg = await message.reply_text("🔍 **Video info fetch kar raha hu...**")
+    msg = await message.reply_text("🔍 **Video info fetch...**")
     
     try:
         info = await get_video_info(url)
@@ -345,10 +333,7 @@ async def yt_handler(client, message: Message):
         )
         
     except Exception as e:
-        error_msg = str(e)
-        await msg.edit_text(
-            f"❌ **Error**\n\n`{error_msg[:500]}`"
-        )
+        await msg.edit_text(f"❌ **Error**\n\n`{str(e)[:500]}`")
 
 
 @Client.on_callback_query(cb_starts("ytdl|"), group=-999)
@@ -365,14 +350,14 @@ async def ytdl_callback(client, query: CallbackQuery):
         
         data = YT_CACHE.get(token)
         if not data:
-            await query.answer("Expired. /yt dobara bhejo.", show_alert=True)
+            await query.answer("Expired", show_alert=True)
             return
         
         if query.from_user.id != data["user_id"]:
-            await query.answer("Tumhare liye nahi hai bhai", show_alert=True)
+            await query.answer("Tumhare liye nahi hai", show_alert=True)
             return
         
-        await query.answer(f"⬇️ Downloading {quality}p...")
+        await query.answer(f"⬇️ {quality}p...")
         
         await query.message.edit_text(
             f"⬇️ **Downloading {quality}p...**\n\n"
@@ -432,7 +417,7 @@ async def ytdl_callback(client, query: CallbackQuery):
             
         except Exception as e:
             await query.message.edit_text(
-                f"❌ **Download error**\n\n`{str(e)[:400]}`"
+                f"❌ **Error**\n\n`{str(e)[:400]}`"
             )
         
         finally:
@@ -463,7 +448,7 @@ async def ytmp3_callback(client, query: CallbackQuery):
             await query.answer("Tumhare liye nahi hai", show_alert=True)
             return
         
-        await query.answer("🎵 Downloading MP3...")
+        await query.answer("🎵 MP3...")
         
         await query.message.edit_text(
             f"🎵 **Downloading MP3...**\n\n"
