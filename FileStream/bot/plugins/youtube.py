@@ -1,3 +1,58 @@
+@Client.on_message(filters.command("cookiescheck"))
+async def cookies_check_handler(client, message):
+    """Debug command to check cookies status"""
+    
+    text = "🍪 **Cookies Debug**\n\n"
+    
+    # Check env variable
+    yt_env = os.getenv("YT_COOKIES")
+    if yt_env:
+        text += f"✅ **ENV Variable:** Found\n"
+        text += f"📏 **Length:** {len(yt_env)} chars\n"
+        text += f"📝 **First 100:** `{yt_env[:100]}`\n\n"
+    else:
+        text += f"❌ **ENV Variable:** NOT FOUND\n\n"
+    
+    # Check file paths
+    text += "📁 **File Paths:**\n"
+    paths = [
+        "cookies.txt",
+        "/app/cookies.txt",
+        "./cookies.txt",
+    ]
+    for p in paths:
+        exists = "✅" if os.path.exists(p) else "❌"
+        text += f"{exists} `{p}`\n"
+    
+    # Check working directory
+    text += f"\n📂 **CWD:** `{os.getcwd()}`\n"
+    
+    # List files in cwd
+    try:
+        files = os.listdir(".")
+        cookies_files = [f for f in files if "cookie" in f.lower()]
+        if cookies_files:
+            text += f"\n🔍 **Cookie files found:**\n"
+            for f in cookies_files:
+                text += f"• `{f}`\n"
+        else:
+            text += f"\n⚠️ **No cookie files in current directory**\n"
+    except Exception as e:
+        text += f"\n❌ Error listing: {e}"
+    
+    await message.reply_text(text)
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import re
 import time
