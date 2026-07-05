@@ -8,4 +8,4 @@ dnspython
 requests
 jinja2
 psutil 
-yt-dlp
+yt-dlp>=2024.10.22
