@@ -17,44 +17,6 @@ from pyrogram.types import (
 import yt_dlp
 
 
-# ========== DEBUG COOKIES ON STARTUP ==========
-print("=" * 60)
-print("[COOKIES DEBUG] Starting check...")
-print(f"[COOKIES DEBUG] Current directory: {os.getcwd()}")
-print(f"[COOKIES DEBUG] Files with .txt or cookie:")
-try:
-    for f in os.listdir("."):
-        if "cookie" in f.lower() or f.endswith(".txt"):
-            size = os.path.getsize(f)
-            print(f"[COOKIES DEBUG]   ✅ {f} ({size} bytes)")
-except Exception as e:
-    print(f"[COOKIES DEBUG]   Error listing: {e}")
-
-# Check specific paths
-paths_to_check = [
-    "cookies.txt",
-    "/app/cookies.txt",
-    "./cookies.txt",
-    "/cookies.txt",
-]
-
-for path in paths_to_check:
-    if os.path.exists(path):
-        size = os.path.getsize(path)
-        print(f"[COOKIES DEBUG] ✅ FOUND: {path} ({size} bytes)")
-        try:
-            with open(path, "r") as f:
-                first_line = f.readline().strip()
-                print(f"[COOKIES DEBUG]    First line: {first_line[:80]}")
-        except Exception as e:
-            print(f"[COOKIES DEBUG]    Read error: {e}")
-    else:
-        print(f"[COOKIES DEBUG] ❌ NOT FOUND: {path}")
-
-print("=" * 60)
-# ========== END DEBUG ==========
-
-
 DOWNLOAD_DIR = "downloads/youtube"
 YT_CACHE = {}
 CACHE_TIME = 1800
@@ -86,43 +48,20 @@ def get_youtube_url(text: str):
 
 
 def get_cookies_path():
-    """Find cookies file - checks multiple paths"""
-    
-    # Check multiple possible locations
-    possible_paths = [
+    """Find cookies file"""
+    paths = [
         "cookies.txt",
         "/app/cookies.txt",
         "./cookies.txt",
-        os.path.join(os.getcwd(), "cookies.txt"),
     ]
-    
-    for path in possible_paths:
-        if os.path.exists(path):
-            size = os.path.getsize(path)
-            if size > 100:  # Valid cookies file should have content
-                print(f"[YT] ✅ Cookies FOUND: {path} ({size} bytes)")
-                return path
-            else:
-                print(f"[YT] ⚠️ Cookies too small: {path} ({size} bytes)")
-    
-    # Check env variable as fallback
-    yt_env = os.getenv("YT_COOKIES")
-    if yt_env:
-        temp_path = "/tmp/yt_cookies.txt"
-        try:
-            with open(temp_path, "w") as f:
-                f.write(yt_env)
-            print(f"[YT] ✅ Cookies from ENV variable")
-            return temp_path
-        except Exception as e:
-            print(f"[YT] ❌ ENV write error: {e}")
-    
-    print(f"[YT] ❌ NO COOKIES FOUND ANYWHERE")
+    for p in paths:
+        if os.path.exists(p) and os.path.getsize(p) > 100:
+            return p
     return None
 
 
 def get_ydl_opts_base():
-    """Base yt-dlp options"""
+    """iOS client - best for cookies-free downloads"""
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -137,15 +76,14 @@ def get_ydl_opts_base():
         "nocheckcertificate": True,
         "http_headers": {
             "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
+                "com.google.ios.youtube/19.29.1 "
+                "(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)"
             ),
-            "Accept-Language": "en-US,en;q=0.9",
         },
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "tv_embedded", "web"],
+                "player_client": ["ios", "mweb", "android_music", "tv_embedded"],
+                "player_skip": ["webpage", "configs"],
             }
         },
     }
@@ -179,88 +117,48 @@ def format_duration(seconds):
     return f"{m}:{s:02d}"
 
 
-# ========== DEBUG COMMAND ==========
-@Client.on_message(filters.command("cookiescheck"))
-async def cookies_check_handler(client, message):
-    """Debug: Check cookies status"""
+async def get_video_info(url: str):
+    """Try multiple clients with automatic fallback"""
     
-    text = "🍪 **Cookies Debug**\n\n"
-    text += f"📂 **CWD:** `{os.getcwd()}`\n\n"
-    
-    # Check paths
-    text += "**📁 File Check:**\n"
-    paths = [
-        "cookies.txt",
-        "/app/cookies.txt",
-        "./cookies.txt",
+    clients_to_try = [
+        ["ios"],
+        ["mweb"],
+        ["android_music"],
+        ["tv_embedded"],
+        ["android"],
+        ["web"],
     ]
     
-    found = False
-    for p in paths:
-        if os.path.exists(p):
-            size = os.path.getsize(p)
-            text += f"✅ `{p}`\n   Size: `{size} bytes`\n"
-            found = True
-            try:
-                with open(p, "r") as f:
-                    first_line = f.readline().strip()
-                    text += f"   Preview: `{first_line[:50]}...`\n"
-            except:
-                pass
-        else:
-            text += f"❌ `{p}`\n"
+    last_error = None
     
-    text += "\n"
+    for client_list in clients_to_try:
+        try:
+            opts = get_ydl_opts_base()
+            opts["extractor_args"]["youtube"]["player_client"] = client_list
+            opts["skip_download"] = True
+            
+            def _extract():
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, _extract)
+            
+            print(f"[YT] ✅ Info fetched with client: {client_list}")
+            return info, client_list
+            
+        except Exception as e:
+            last_error = e
+            print(f"[YT] ❌ Failed {client_list}: {str(e)[:100]}")
+            continue
     
-    # Check ENV
-    yt_env = os.getenv("YT_COOKIES")
-    if yt_env:
-        text += f"✅ **ENV YT_COOKIES:** Set ({len(yt_env)} chars)\n"
-    else:
-        text += f"❌ **ENV YT_COOKIES:** Not set\n"
-    
-    text += "\n"
-    
-    # List cookie files
-    text += "**🔍 Files in CWD:**\n"
-    try:
-        files = os.listdir(".")
-        cookie_files = [f for f in files if "cookie" in f.lower()]
-        txt_files = [f for f in files if f.endswith(".txt")]
-        
-        if cookie_files:
-            for f in cookie_files:
-                text += f"• `{f}`\n"
-        else:
-            text += f"No cookie files found\n"
-        
-        text += f"\n**📄 .txt files:**\n"
-        if txt_files:
-            for f in txt_files:
-                text += f"• `{f}`\n"
-        else:
-            text += f"No .txt files\n"
-    except Exception as e:
-        text += f"Error: `{e}`\n"
-    
-    await message.reply_text(text)
-# ========== END DEBUG ==========
-
-
-async def get_video_info(url: str):
-    opts = get_ydl_opts_base()
-    opts["skip_download"] = True
-    
-    def _extract():
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.extract_info(url, download=False)
-    
-    loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, _extract)
-    return info
+    if last_error:
+        raise last_error
+    raise Exception("All extractors failed")
 
 
 def get_available_qualities(info):
+    """Get available video qualities"""
     formats = info.get("formats", [])
     qualities = {}
     
@@ -347,11 +245,16 @@ def build_quality_buttons(token: str, qualities: list):
     return InlineKeyboardMarkup(buttons)
 
 
-async def download_video(url: str, quality: int, token: str):
+async def download_video(url: str, quality: int, token: str, client_list=None):
+    """Download video with fallback clients"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
+    if not client_list:
+        client_list = ["ios", "mweb", "android_music"]
+    
     opts = get_ydl_opts_base()
+    opts["extractor_args"]["youtube"]["player_client"] = client_list
     opts.update({
         "format": (
             f"bestvideo[height<={quality}]+bestaudio/"
@@ -379,11 +282,16 @@ async def download_video(url: str, quality: int, token: str):
     return None, info
 
 
-async def download_mp3(url: str, token: str):
+async def download_mp3(url: str, token: str, client_list=None):
+    """Download MP3 with fallback clients"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
+    if not client_list:
+        client_list = ["ios", "mweb", "android_music"]
+    
     opts = get_ydl_opts_base()
+    opts["extractor_args"]["youtube"]["player_client"] = client_list
     opts.update({
         "format": "bestaudio/best",
         "outtmpl": f"{folder}/%(title).60s.%(ext)s",
@@ -432,14 +340,16 @@ async def yt_handler(client, message: Message):
     
     if not url:
         return await message.reply_text(
-            "❌ **YouTube link do**\n\n"
-            "`/yt https://youtu.be/VIDEO_ID`"
+            "❌ **YouTube link do bhai**\n\n"
+            "**Usage:**\n"
+            "`/yt https://youtu.be/VIDEO_ID`\n"
+            "`/ytdl https://youtube.com/watch?v=VIDEO_ID`"
         )
     
-    msg = await message.reply_text("🔍 **Video info fetch...**")
+    msg = await message.reply_text("🔍 **Video info fetch kar raha hu...**")
     
     try:
-        info = await get_video_info(url)
+        info, working_client = await get_video_info(url)
         
         title = info.get("title", "Unknown")
         uploader = info.get("uploader", "Unknown")
@@ -449,7 +359,9 @@ async def yt_handler(client, message: Message):
         qualities = get_available_qualities(info)
         
         if not qualities:
-            return await msg.edit_text("❌ **Koi quality nahi mili**")
+            return await msg.edit_text(
+                "❌ **Koi quality nahi mili**"
+            )
         
         token = uuid.uuid4().hex[:10]
         YT_CACHE[token] = {
@@ -458,6 +370,7 @@ async def yt_handler(client, message: Message):
             "user_id": message.from_user.id if message.from_user else 0,
             "chat_id": message.chat.id,
             "reply_to": message.id,
+            "client": working_client,
             "time": time.time()
         }
         
@@ -476,18 +389,11 @@ async def yt_handler(client, message: Message):
         
     except Exception as e:
         error_msg = str(e)
-        
-        if "sign in" in error_msg.lower() or "not a bot" in error_msg.lower():
-            await msg.edit_text(
-                "❌ **Cookies Problem**\n\n"
-                "Cookies load nahi ho rahi ya expire hai।\n\n"
-                "Use `/cookiescheck` to debug\n\n"
-                f"**Error:** `{error_msg[:200]}`"
-            )
-        else:
-            await msg.edit_text(
-                f"❌ **Error**\n\n`{error_msg[:400]}`"
-            )
+        await msg.edit_text(
+            f"❌ **Error**\n\n"
+            f"`{error_msg[:500]}`\n\n"
+            f"Try `/cookiescheck` for debug"
+        )
 
 
 @Client.on_callback_query(cb_starts("ytdl|"), group=-999)
@@ -504,14 +410,20 @@ async def ytdl_callback(client, query: CallbackQuery):
         
         data = YT_CACHE.get(token)
         if not data:
-            await query.answer("Expired", show_alert=True)
+            await query.answer(
+                "Expired. /yt dobara bhejo.",
+                show_alert=True
+            )
             return
         
         if query.from_user.id != data["user_id"]:
-            await query.answer("Tumhare liye nahi hai", show_alert=True)
+            await query.answer(
+                "Tumhare liye nahi hai bhai",
+                show_alert=True
+            )
             return
         
-        await query.answer(f"⬇️ {quality}p...")
+        await query.answer(f"⬇️ Downloading {quality}p...")
         
         await query.message.edit_text(
             f"⬇️ **Downloading {quality}p...**\n\n"
@@ -520,10 +432,15 @@ async def ytdl_callback(client, query: CallbackQuery):
         )
         
         try:
-            file_path, info = await download_video(data["url"], quality, token)
+            file_path, info = await download_video(
+                data["url"], 
+                quality, 
+                token,
+                data.get("client")
+            )
             
             if not file_path or not os.path.exists(file_path):
-                await query.message.edit_text("❌ **Failed**")
+                await query.message.edit_text("❌ **Download failed**")
                 cleanup_download(token)
                 return
             
@@ -531,7 +448,7 @@ async def ytdl_callback(client, query: CallbackQuery):
             
             if file_size > 2000 * 1024 * 1024:
                 await query.message.edit_text(
-                    f"❌ **Too large** ({format_size(file_size)})"
+                    f"❌ **File too large** ({format_size(file_size)})"
                 )
                 cleanup_download(token)
                 return
@@ -550,8 +467,8 @@ async def ytdl_callback(client, query: CallbackQuery):
                     video=file_path,
                     caption=(
                         f"🎬 **{data['title']}**\n\n"
-                        f"📺 `{quality}p`\n"
-                        f"📦 `{format_size(file_size)}`\n\n"
+                        f"📺 Quality: `{quality}p`\n"
+                        f"📦 Size: `{format_size(file_size)}`\n\n"
                         f"⚡ @{bot_info.username}"
                     ),
                     reply_to_message_id=data["reply_to"],
@@ -571,7 +488,8 @@ async def ytdl_callback(client, query: CallbackQuery):
             
         except Exception as e:
             await query.message.edit_text(
-                f"❌ **Error**\n\n`{str(e)[:400]}`"
+                f"❌ **Download error**\n\n"
+                f"`{str(e)[:400]}`"
             )
         
         finally:
@@ -602,7 +520,7 @@ async def ytmp3_callback(client, query: CallbackQuery):
             await query.answer("Tumhare liye nahi hai", show_alert=True)
             return
         
-        await query.answer("🎵 MP3...")
+        await query.answer("🎵 Downloading MP3...")
         
         await query.message.edit_text(
             f"🎵 **Downloading MP3...**\n\n"
@@ -610,7 +528,11 @@ async def ytmp3_callback(client, query: CallbackQuery):
         )
         
         try:
-            file_path, info = await download_mp3(data["url"], token)
+            file_path, info = await download_mp3(
+                data["url"], 
+                token,
+                data.get("client")
+            )
             
             if not file_path or not os.path.exists(file_path):
                 await query.message.edit_text("❌ **MP3 failed**")
@@ -675,3 +597,20 @@ async def ytcancel_callback(client, query: CallbackQuery):
     
     finally:
         raise StopPropagation
+
+
+@Client.on_message(filters.command("cookiescheck"))
+async def cookies_check_handler(client, message):
+    """Debug cookies"""
+    text = "🍪 **Cookies Debug**\n\n"
+    text += f"📂 **CWD:** `{os.getcwd()}`\n\n"
+    text += "**📁 File Check:**\n"
+    
+    for p in ["cookies.txt", "/app/cookies.txt", "./cookies.txt"]:
+        if os.path.exists(p):
+            size = os.path.getsize(p)
+            text += f"✅ `{p}`\n   Size: `{size} bytes`\n"
+        else:
+            text += f"❌ `{p}`\n"
+    
+    await message.reply_text(text)
