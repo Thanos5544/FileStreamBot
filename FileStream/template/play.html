@@ -626,4 +626,61 @@
         // MX Player
         function mx_player() {
             window.location.href = `intent:${fileUrl}#Intent;package=com.mxtech.videoplayer.ad;S.title=${fileName};end`;
-            showToast('Opening 
+            showToast('Opening MX Player...');
+        }
+
+        // KMPlayer
+        function kmplayer() {
+            window.location.href = `intent:${fileUrl}#Intent;package=com.kmplayer;S.title=${fileName};end`;
+            showToast('Opening KMPlayer...');
+        }
+
+        // nPlayer
+        function nplayer() {
+            window.location.href = `nplayer-${fileUrl}`;
+            showToast('Opening nPlayer...');
+        }
+
+        // S Player
+        function splayer() {
+            window.location.href = `intent:${fileUrl}#Intent;package=com.hd.video.player.videoplayer;S.title=${fileName};end`;
+            showToast('Opening S Player...');
+        }
+
+        // HD Player
+        function hdplayer() {
+            window.location.href = `intent:${fileUrl}#Intent;package=com.rocks.video.hd.player;S.title=${fileName};end`;
+            showToast('Opening HD Player...');
+        }
+
+        // PLAYit
+        function playit() {
+            window.location.href = `intent:${fileUrl}#Intent;package=com.playit.videoplayer;S.title=${fileName};end`;
+            showToast('Opening PLAYit...');
+        }
+
+        // Copy Link
+        function copyStreamLink() {
+            navigator.clipboard.writeText(fileUrl).then(() => {
+                showToast('Link Copied Successfully!');
+            }).catch(() => {
+                const t = document.createElement('textarea');
+                t.value = fileUrl;
+                document.body.appendChild(t);
+                t.select();
+                document.execCommand('copy');
+                document.body.removeChild(t);
+                showToast('Link Copied!');
+            });
+        }
+
+        // Toast Notification
+        function showToast(m) {
+            const t = document.getElementById('toast');
+            document.getElementById('toastText').textContent = m;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>
