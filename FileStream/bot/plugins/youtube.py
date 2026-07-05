@@ -19,9 +19,7 @@ import yt_dlp
 
 DOWNLOAD_DIR = "downloads/youtube"
 YT_CACHE = {}
-CACHE_TIME = 1800
-
-COOKIES_FILE = "cookies.txt"
+CACHE_TIME = 1800  # 30 minutes
 
 YOUTUBE_REGEX = re.compile(
     r"(https?://(?:www\.|m\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/[\w\-\?&=/.]+)",
@@ -49,8 +47,40 @@ def get_youtube_url(text: str):
     return match.group(1) if match else None
 
 
+def get_cookies_path():
+    """Get cookies from env variable or file"""
+    
+    # Method 1: Environment variable (BEST for security)
+    yt_cookies = os.getenv("YT_COOKIES")
+    if yt_cookies:
+        cookies_path = "/tmp/yt_cookies.txt"
+        try:
+            with open(cookies_path, "w", encoding="utf-8") as f:
+                f.write(yt_cookies)
+            print(f"[YT] ✅ Cookies loaded from ENV variable")
+            return cookies_path
+        except Exception as e:
+            print(f"[YT] ❌ Error writing env cookies: {e}")
+    
+    # Method 2: Check multiple file paths
+    possible_paths = [
+        "cookies.txt",
+        "/app/cookies.txt",
+        "./cookies.txt",
+        os.path.join(os.getcwd(), "cookies.txt"),
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            print(f"[YT] ✅ Cookies loaded from: {path}")
+            return path
+    
+    print(f"[YT] ⚠️ NO COOKIES FOUND")
+    return None
+
+
 def get_ydl_opts_base():
-    """Base options with cookies"""
+    """Base yt-dlp options with cookies"""
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -73,14 +103,14 @@ def get_ydl_opts_base():
         },
         "extractor_args": {
             "youtube": {
-                "player_client": ["web", "android", "ios"],
+                "player_client": ["android", "tv_embedded", "web"],
             }
         },
     }
     
-    if os.path.exists(COOKIES_FILE):
-        opts["cookiefile"] = COOKIES_FILE
-        print(f"[YT] Using cookies from {COOKIES_FILE}")
+    cookies_path = get_cookies_path()
+    if cookies_path:
+        opts["cookiefile"] = cookies_path
     
     return opts
 
@@ -108,6 +138,7 @@ def format_duration(seconds):
 
 
 async def get_video_info(url: str):
+    """Fetch video info without downloading"""
     opts = get_ydl_opts_base()
     opts["skip_download"] = True
     
@@ -121,7 +152,7 @@ async def get_video_info(url: str):
 
 
 def get_available_qualities(info):
-    """Get available qualities - flexible detection"""
+    """Get available video qualities - flexible"""
     formats = info.get("formats", [])
     qualities = {}
     
@@ -159,11 +190,15 @@ def get_available_qualities(info):
                 "filesize": f.get("filesize") or f.get("filesize_approx"),
                 "ext": f.get("ext", "mp4"),
             }
+        else:
+            if f.get("filesize") and not qualities[std]["filesize"]:
+                qualities[std]["filesize"] = f.get("filesize")
     
     return sorted(qualities.values(), key=lambda x: x["height"])
 
 
 def build_quality_buttons(token: str, qualities: list):
+    """Build inline keyboard with quality options"""
     buttons = []
     target_qualities = [144, 240, 360, 480, 720, 1080, 1440, 2160]
     available = [q["height"] for q in qualities]
@@ -190,6 +225,7 @@ def build_quality_buttons(token: str, qualities: list):
     if row:
         buttons.append(row)
     
+    # MP3 Audio button
     buttons.append([
         InlineKeyboardButton(
             "🎵 MP3 Audio (192 kbps)",
@@ -197,6 +233,7 @@ def build_quality_buttons(token: str, qualities: list):
         )
     ])
     
+    # Cancel button
     buttons.append([
         InlineKeyboardButton(
             "❌ Cancel",
@@ -208,7 +245,7 @@ def build_quality_buttons(token: str, qualities: list):
 
 
 async def download_video(url: str, quality: int, token: str):
-    """Download video - FLEXIBLE format handling"""
+    """Download video with flexible format handling"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
@@ -235,6 +272,7 @@ async def download_video(url: str, quality: int, token: str):
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _download)
     
+    # Find downloaded file
     for f in os.listdir(folder):
         if f.endswith(('.mp4', '.mkv', '.webm')):
             return os.path.join(folder, f), info
@@ -243,7 +281,7 @@ async def download_video(url: str, quality: int, token: str):
 
 
 async def download_mp3(url: str, token: str):
-    """Download MP3 - flexible"""
+    """Download as MP3"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     Path(folder).mkdir(parents=True, exist_ok=True)
     
@@ -274,6 +312,7 @@ async def download_mp3(url: str, token: str):
 
 
 def cleanup_download(token: str):
+    """Clean up downloaded files"""
     folder = os.path.join(DOWNLOAD_DIR, token)
     if os.path.exists(folder):
         try:
@@ -297,10 +336,13 @@ async def yt_handler(client, message: Message):
     if not url:
         return await message.reply_text(
             "❌ **YouTube link do bhai**\n\n"
-            "`/yt https://youtu.be/VIDEO_ID`"
+            "**Usage:**\n"
+            "`/yt https://youtube.com/watch?v=VIDEO_ID`\n"
+            "`/ytdl https://youtu.be/VIDEO_ID`\n\n"
+            "Ya YouTube link ko reply karke `/yt` bhejo"
         )
     
-    msg = await message.reply_text("🔍 **Video info fetch...**")
+    msg = await message.reply_text("🔍 **Video info fetch kar raha hu...**")
     
     try:
         info = await get_video_info(url)
@@ -314,7 +356,8 @@ async def yt_handler(client, message: Message):
         
         if not qualities:
             return await msg.edit_text(
-                "❌ **Koi quality nahi mili**"
+                "❌ **Koi quality nahi mili**\n\n"
+                "Video restricted ho sakti hai."
             )
         
         token = uuid.uuid4().hex[:10]
@@ -341,9 +384,22 @@ async def yt_handler(client, message: Message):
         )
         
     except Exception as e:
-        await msg.edit_text(
-            f"❌ **Error**\n\n`{str(e)[:400]}`"
-        )
+        error_msg = str(e)
+        
+        if "sign in" in error_msg.lower() or "not a bot" in error_msg.lower():
+            await msg.edit_text(
+                "❌ **YouTube Bot Detection**\n\n"
+                "Cookies expire ho gayi ya set nahi hain।\n\n"
+                "**Fix:**\n"
+                "1. Fresh cookies export karo (Firefox)\n"
+                "2. Koyeb env `YT_COOKIES` update karo\n"
+                "3. Redeploy karo\n\n"
+                f"**Error:** `{error_msg[:200]}`"
+            )
+        else:
+            await msg.edit_text(
+                f"❌ **Error**\n\n`{error_msg[:400]}`"
+            )
 
 
 @Client.on_callback_query(cb_starts("ytdl|"), group=-999)
@@ -360,11 +416,17 @@ async def ytdl_callback(client, query: CallbackQuery):
         
         data = YT_CACHE.get(token)
         if not data:
-            await query.answer("Expired. /yt dobara bhejo.", show_alert=True)
+            await query.answer(
+                "Expired. /yt dobara bhejo.",
+                show_alert=True
+            )
             return
         
         if query.from_user.id != data["user_id"]:
-            await query.answer("Tumhare liye nahi hai bhai", show_alert=True)
+            await query.answer(
+                "Ye button tumhare liye nahi hai bhai",
+                show_alert=True
+            )
             return
         
         await query.answer(f"⬇️ Downloading {quality}p...")
@@ -372,14 +434,19 @@ async def ytdl_callback(client, query: CallbackQuery):
         await query.message.edit_text(
             f"⬇️ **Downloading {quality}p...**\n\n"
             f"🎬 {data['title'][:60]}\n\n"
-            f"⏳ Please wait..."
+            f"⏳ Please wait (1-3 minutes)..."
         )
         
         try:
-            file_path, info = await download_video(data["url"], quality, token)
+            file_path, info = await download_video(
+                data["url"], quality, token
+            )
             
             if not file_path or not os.path.exists(file_path):
-                await query.message.edit_text("❌ **Download failed**")
+                await query.message.edit_text(
+                    "❌ **Download failed**\n\n"
+                    "Try different quality."
+                )
                 cleanup_download(token)
                 return
             
@@ -387,16 +454,18 @@ async def ytdl_callback(client, query: CallbackQuery):
             
             if file_size > 2000 * 1024 * 1024:
                 await query.message.edit_text(
-                    f"❌ **File too large** ({format_size(file_size)})\n\n"
+                    f"❌ **File too large**\n\n"
+                    f"Size: {format_size(file_size)}\n"
+                    f"Telegram limit: 2 GB\n\n"
                     f"Try lower quality."
                 )
                 cleanup_download(token)
                 return
             
             await query.message.edit_text(
-                f"📤 **Uploading...**\n\n"
+                f"📤 **Uploading to Telegram...**\n\n"
                 f"🎬 {data['title'][:60]}\n"
-                f"📦 {format_size(file_size)}"
+                f"📦 Size: {format_size(file_size)}"
             )
             
             try:
@@ -428,7 +497,8 @@ async def ytdl_callback(client, query: CallbackQuery):
             
         except Exception as e:
             await query.message.edit_text(
-                f"❌ **Error**\n\n`{str(e)[:400]}`"
+                f"❌ **Download error**\n\n"
+                f"`{str(e)[:400]}`"
             )
         
         finally:
@@ -447,16 +517,22 @@ async def ytmp3_callback(client, query: CallbackQuery):
         try:
             _, token = query.data.split("|")
         except Exception:
-            await query.answer("Invalid", show_alert=True)
+            await query.answer("Invalid button", show_alert=True)
             return
         
         data = YT_CACHE.get(token)
         if not data:
-            await query.answer("Expired", show_alert=True)
+            await query.answer(
+                "Expired. /yt dobara bhejo.",
+                show_alert=True
+            )
             return
         
         if query.from_user.id != data["user_id"]:
-            await query.answer("Tumhare liye nahi hai", show_alert=True)
+            await query.answer(
+                "Ye button tumhare liye nahi hai",
+                show_alert=True
+            )
             return
         
         await query.answer("🎵 Downloading MP3...")
@@ -471,7 +547,10 @@ async def ytmp3_callback(client, query: CallbackQuery):
             file_path, info = await download_mp3(data["url"], token)
             
             if not file_path or not os.path.exists(file_path):
-                await query.message.edit_text("❌ **MP3 failed**")
+                await query.message.edit_text(
+                    "❌ **MP3 failed**\n\n"
+                    "FFmpeg not installed ya cookies issue."
+                )
                 cleanup_download(token)
                 return
             
@@ -480,7 +559,7 @@ async def ytmp3_callback(client, query: CallbackQuery):
             await query.message.edit_text(
                 f"📤 **Uploading MP3...**\n\n"
                 f"🎵 {data['title'][:60]}\n"
-                f"📦 {format_size(file_size)}"
+                f"📦 Size: {format_size(file_size)}"
             )
             
             bot_info = await client.get_me()
@@ -500,7 +579,8 @@ async def ytmp3_callback(client, query: CallbackQuery):
             
         except Exception as e:
             await query.message.edit_text(
-                f"❌ **MP3 error**\n\n`{str(e)[:400]}`"
+                f"❌ **MP3 error**\n\n"
+                f"`{str(e)[:400]}`"
             )
         
         finally:
@@ -517,12 +597,15 @@ async def ytcancel_callback(client, query: CallbackQuery):
         try:
             _, token = query.data.split("|")
         except Exception:
-            await query.answer("Invalid", show_alert=True)
+            await query.answer("Invalid button", show_alert=True)
             return
         
         data = YT_CACHE.get(token)
         if data and query.from_user.id != data["user_id"]:
-            await query.answer("Tumhare liye nahi hai", show_alert=True)
+            await query.answer(
+                "Ye button tumhare liye nahi hai",
+                show_alert=True
+            )
             return
         
         YT_CACHE.pop(token, None)
