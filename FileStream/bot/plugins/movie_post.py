@@ -19,7 +19,7 @@ from pyrogram.types import (
 
 
 # =========== CONFIG ===========
-TMDB_API = os.getenv("TMDB_API", "YOUR_TMDB_API_KEY_HERE")
+TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
