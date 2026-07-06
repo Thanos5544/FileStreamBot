@@ -20,7 +20,6 @@ from pyrogram.types import (
 )
 
 
-# =========== CONFIG ===========
 TMDB_API = os.getenv("TMDB_API", "YOUR_TMDB_API_KEY_HERE")
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/original"
@@ -36,7 +35,6 @@ DEFAULT_CAPTION = """<b>{title} ({year})</b>
 DEFAULT_BUTTON_TEXT = "🔽 Download"
 DEFAULT_BUTTON_URL = "https://t.me/Patrick_Botz"
 
-# Colors with RGB
 COLORS = {
     "red": (231, 76, 60),
     "orange": (230, 126, 34),
@@ -53,7 +51,7 @@ CACHE_TIME = 1800
 USER_SETTINGS = {}
 
 
-def cb_starts(prefix: str):
+def cb_starts(prefix):
     return filters.create(
         lambda _, __, query: bool(query.data and query.data.startswith(prefix))
     )
@@ -83,18 +81,11 @@ async def search_movie(query, year=None):
         params = {"api_key": TMDB_API, "query": query}
         if year:
             params["year"] = year
-        
         url = f"{TMDB_BASE}/search/multi"
-        
         async with session.get(url, params=params) as resp:
             data = await resp.json()
             results = data.get("results", [])
-            
-            filtered = [
-                r for r in results 
-                if r.get("media_type") in ["movie", "tv"]
-            ]
-            
+            filtered = [r for r in results if r.get("media_type") in ["movie", "tv"]]
             return filtered
 
 
@@ -102,19 +93,14 @@ async def get_movie_details(media_id, media_type):
     async with aiohttp.ClientSession() as session:
         params = {"api_key": TMDB_API, "append_to_response": "credits"}
         url = f"{TMDB_BASE}/{media_type}/{media_id}"
-        
         async with session.get(url, params=params) as resp:
             return await resp.json()
 
 
 async def get_movie_images(media_id, media_type):
     async with aiohttp.ClientSession() as session:
-        params = {
-            "api_key": TMDB_API,
-            "include_image_language": "en,null,hi",
-        }
+        params = {"api_key": TMDB_API, "include_image_language": "en,null,hi"}
         url = f"{TMDB_BASE}/{media_type}/{media_id}/images"
-        
         async with session.get(url, params=params) as resp:
             return await resp.json()
 
@@ -126,65 +112,41 @@ async def download_image(url):
 
 
 def get_font(size, bold=False):
-    """Get font with fallback"""
     fonts_to_try = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ]
-    
     for font_path in fonts_to_try:
         try:
             return ImageFont.truetype(font_path, size)
         except:
             continue
-    
     return ImageFont.load_default()
 
 
 def create_gradient_overlay(size, color, direction="left"):
-    """Create gradient overlay"""
     gradient = Image.new("RGBA", size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(gradient)
-    
     width, height = size
     
     if direction == "left":
         for x in range(width):
             alpha = int(255 * (1 - x / (width * 0.7)))
             alpha = max(0, min(255, alpha))
-            draw.line(
-                [(x, 0), (x, height)],
-                fill=(color[0], color[1], color[2], alpha)
-            )
+            draw.line([(x, 0), (x, height)], fill=(color[0], color[1], color[2], alpha))
     elif direction == "bottom":
         for y in range(height):
             alpha = int(255 * (y / height))
             alpha = max(0, min(255, alpha))
-            draw.line(
-                [(0, y), (width, y)],
-                fill=(0, 0, 0, alpha)
-            )
-    
+            draw.line([(0, y), (width, y)], fill=(0, 0, 0, alpha))
     return gradient
 
 
-def truncate_text(text, max_length):
-    if len(text) > max_length:
-        return text[:max_length - 3] + "..."
-    return text
-
-
 async def create_postify_template(image_url, movie_data, color_name=None, channel=None, branding=None):
-    """Create Postify-style poster with all details"""
-    
-    # Download image
     img_bytes = await download_image(image_url)
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     
-    # Resize to landscape 1280x720
     target_size = (1280, 720)
-    
-    # Resize maintaining aspect ratio and crop
     img_ratio = img.size[0] / img.size[1]
     target_ratio = target_size[0] / target_size[1]
     
@@ -196,30 +158,23 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
         new_height = int(new_width / img_ratio)
     
     img = img.resize((new_width, new_height), Image.LANCZOS)
-    
-    # Crop to center
     left = (new_width - target_size[0]) // 2
     top = (new_height - target_size[1]) // 2
     img = img.crop((left, top, left + target_size[0], top + target_size[1]))
     
-    # Apply color overlay if selected
     if color_name and color_name in COLORS:
         color = COLORS[color_name]
         color_overlay = Image.new("RGBA", target_size, (color[0], color[1], color[2], 100))
         img = Image.alpha_composite(img, color_overlay)
     
-    # Add dark gradient from left (for text readability)
     left_gradient = create_gradient_overlay(target_size, (0, 0, 0), "left")
     img = Image.alpha_composite(img, left_gradient)
     
-    # Add bottom gradient
     bottom_gradient = create_gradient_overlay(target_size, (0, 0, 0), "bottom")
     img = Image.alpha_composite(img, bottom_gradient)
     
-    # Create drawing layer
     draw = ImageDraw.Draw(img)
     
-    # Get movie data
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
     date = movie_data.get("release_date") or movie_data.get("first_air_date") or ""
     year = date[:4] if date else "N/A"
@@ -233,16 +188,13 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
     
     runtime = movie_data.get("runtime") or 0
     if not runtime:
-        # For TV series
         episode_time = movie_data.get("episode_run_time", [])
         runtime = episode_time[0] if episode_time else 0
-    
     duration = f"{runtime} MIN" if runtime else ""
     
     overview = movie_data.get("overview", "")
     rating = movie_data.get("vote_average", 0)
     
-    # Get director/creator
     credits = movie_data.get("credits", {})
     crew = credits.get("crew", [])
     director = ""
@@ -255,36 +207,25 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
         if creators:
             director = creators[0].get("name", "").upper()
     
-    # === DRAW ELEMENTS ===
-    
-    # 1. Channel branding top-left
     if channel:
         channel_font = get_font(22, bold=True)
-        # Small icon-like box
         draw.rectangle([(30, 30), (60, 55)], fill=(255, 255, 255, 30))
         draw.text((70, 32), channel, font=channel_font, fill=(255, 255, 255, 255))
     
-    # 2. FILMED BY (Director)
     if director:
         filmed_by_font = get_font(16, bold=True)
         director_font = get_font(16, bold=True)
         
-        # Get color for director name (use selected color or default green)
         if color_name and color_name in COLORS:
             dir_color = COLORS[color_name]
         else:
-            dir_color = (46, 204, 113)  # Default green
+            dir_color = (46, 204, 113)
         
         draw.text((30, 200), "FILMED BY", font=filmed_by_font, fill=(255, 255, 255, 200))
-        
-        # Calculate position for director name
         filmed_bbox = draw.textbbox((0, 0), "FILMED BY", font=filmed_by_font)
         filmed_width = filmed_bbox[2] - filmed_bbox[0]
-        
         draw.text((30 + filmed_width + 10, 200), director[:30], font=director_font, fill=dir_color)
     
-    # 3. BIG TITLE
-    # Adjust font size based on title length
     title_upper = title.upper()
     if len(title_upper) > 20:
         title_size = 55
@@ -296,21 +237,16 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
     title_font = get_font(title_size, bold=True)
     draw.text((30, 240), title_upper, font=title_font, fill=(255, 255, 255, 255))
     
-    # 4. Colored underline below title
     if color_name and color_name in COLORS:
         line_color = COLORS[color_name]
     else:
-        line_color = (46, 204, 113)  # Green default
+        line_color = (46, 204, 113)
     
     title_bbox = draw.textbbox((30, 240), title_upper, font=title_font)
     line_width = min(title_bbox[2] - title_bbox[0], 200)
     line_y = title_bbox[3] + 10
-    draw.rectangle(
-        [(30, line_y), (30 + line_width, line_y + 4)],
-        fill=line_color
-    )
+    draw.rectangle([(30, line_y), (30 + line_width, line_y + 4)], fill=line_color)
     
-    # 5. Year • Genre • Duration
     info_font = get_font(20, bold=True)
     info_text = f"{year}"
     if genres_str:
@@ -321,11 +257,8 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
     info_y = line_y + 25
     draw.text((30, info_y), info_text, font=info_font, fill=(220, 220, 220, 255))
     
-    # 6. Story/Overview
     if overview:
         story_font = get_font(16)
-        
-        # Wrap text
         max_chars_per_line = 65
         words = overview.split()
         lines = []
@@ -337,13 +270,12 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
             else:
                 lines.append(current_line)
                 current_line = word
-                if len(lines) >= 2:  # Max 2 lines
+                if len(lines) >= 2:
                     break
         
         if current_line and len(lines) < 2:
             lines.append(current_line)
         
-        # Truncate last line if needed
         if len(lines) == 2 and len(overview) > 130:
             lines[1] = lines[1][:60] + "..."
         
@@ -352,39 +284,32 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
             draw.text((30, story_y), line, font=story_font, fill=(200, 200, 200, 220))
             story_y += 22
     
-    # 7. WATCH NOW Button
     button_y = target_size[1] - 120
     button_width = 200
     button_height = 55
     
-    # Button background (colored)
     if color_name and color_name in COLORS:
         btn_color = COLORS[color_name]
     else:
-        btn_color = (231, 76, 60)  # Red default like Netflix
+        btn_color = (231, 76, 60)
     
-    # Round rectangle
     draw.rounded_rectangle(
         [(30, button_y), (30 + button_width, button_y + button_height)],
         radius=8,
         fill=btn_color
     )
     
-    # Button text
     btn_font = get_font(20, bold=True)
     btn_text = "▶ WATCH NOW"
     btn_bbox = draw.textbbox((0, 0), btn_text, font=btn_font)
     btn_text_width = btn_bbox[2] - btn_bbox[0]
     btn_text_x = 30 + (button_width - btn_text_width) // 2
     btn_text_y = button_y + (button_height - (btn_bbox[3] - btn_bbox[1])) // 2 - 5
-    
     draw.text((btn_text_x, btn_text_y), btn_text, font=btn_font, fill=(255, 255, 255, 255))
     
-    # 8. IMDB Rating Badge
     imdb_x = 30 + button_width + 15
     imdb_width = 130
     
-    # IMDB badge background (dark)
     draw.rounded_rectangle(
         [(imdb_x, button_y), (imdb_x + imdb_width, button_y + button_height)],
         radius=8,
@@ -393,16 +318,13 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
         width=1
     )
     
-    # Star icon
     star_font = get_font(24, bold=True)
     draw.text((imdb_x + 15, button_y + 12), "✦", font=star_font, fill=(255, 200, 0, 255))
     
-    # Rating text
     rating_font = get_font(18, bold=True)
     rating_text = f"{rating:.1f} IMDb" if rating else "N/A IMDb"
     draw.text((imdb_x + 45, button_y + 18), rating_text, font=rating_font, fill=(255, 255, 255, 255))
     
-    # 9. Watermark bottom center
     if branding:
         wm_font = get_font(20, bold=True)
         wm_bbox = draw.textbbox((0, 0), branding, font=wm_font)
@@ -410,24 +332,16 @@ async def create_postify_template(image_url, movie_data, color_name=None, channe
         wm_x = (target_size[0] - wm_width) // 2
         wm_y = target_size[1] - 40
         
-        # Shadow
         draw.text((wm_x + 2, wm_y + 2), branding, font=wm_font, fill=(0, 0, 0, 200))
-        # Main
         draw.text((wm_x, wm_y), branding, font=wm_font, fill=(255, 255, 255, 200))
     
-    # Convert to RGB and save
     final = img.convert("RGB")
     output = io.BytesIO()
     final.save(output, format="JPEG", quality=95)
     output.seek(0)
-    
     return output
-
-
-def format_caption(template, movie_data):
-    """Format caption with movie variables"""
+    def format_caption(template, movie_data):
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
-    
     date = movie_data.get("release_date") or movie_data.get("first_air_date") or ""
     year = date[:4] if date else "N/A"
     
@@ -453,7 +367,6 @@ def format_caption(template, movie_data):
         audio="Hindi & English",
         quality="480p, 720p, 1080p",
     )
-    
     return caption
 
 
@@ -509,7 +422,6 @@ async def movie_post_handler(client, message):
         )
     
     query_text = " ".join(message.command[1:])
-    
     year_match = re.search(r"\b(19|20)\d{2}\b", query_text)
     year = year_match.group() if year_match else None
     
@@ -518,10 +430,7 @@ async def movie_post_handler(client, message):
     else:
         query = query_text
     
-    msg = await message.reply_text(
-        f"🔍 **Searching:** `{query_text}`\n\n"
-        f"⏳ Please wait..."
-    )
+    msg = await message.reply_text(f"🔍 **Searching:** `{query_text}`\n\n⏳ Please wait...")
     
     try:
         results = await search_movie(query, year)
@@ -572,7 +481,6 @@ async def movie_post_handler(client, message):
         
         settings = get_user_settings(message.from_user.id)
         
-        # Create Postify-style poster
         poster = await create_postify_template(
             image_urls[0],
             details,
@@ -594,10 +502,8 @@ async def movie_post_handler(client, message):
             parse_mode=ParseMode.HTML
         )
         
-        except Exception as e:
-        await msg.edit_text(
-            f"❌ **Error**\n\n`{str(e)[:500]}`"
-        )
+    except Exception as e:
+        await msg.edit_text(f"❌ **Error**\n\n`{str(e)[:500]}`")
 
 
 @Client.on_callback_query(cb_starts("postnav|"), group=-999)
@@ -651,11 +557,7 @@ async def post_nav_callback(client, query):
         caption = format_caption(settings["caption"], data["movie_data"])
         
         await query.message.edit_media(
-            media=InputMediaPhoto(
-                media=poster,
-                caption=caption,
-                parse_mode=ParseMode.HTML
-            ),
+            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
             reply_markup=build_color_buttons(token, new_index, total)
         )
     
@@ -700,14 +602,8 @@ async def post_color_callback(client, query):
         caption = format_caption(settings["caption"], data["movie_data"])
         
         await query.message.edit_media(
-            media=InputMediaPhoto(
-                media=poster,
-                caption=caption,
-                parse_mode=ParseMode.HTML
-            ),
-            reply_markup=build_color_buttons(
-                token, data["current_index"], len(data["images"])
-            )
+            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
+            reply_markup=build_color_buttons(token, data["current_index"], len(data["images"]))
         )
     
     finally:
@@ -737,10 +633,7 @@ async def post_use_callback(client, query):
         settings = get_user_settings(query.from_user.id)
         
         download_button = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                settings["button_text"],
-                url=settings["button_url"]
-            )
+            InlineKeyboardButton(settings["button_text"], url=settings["button_url"])
         ]])
         
         await query.message.edit_reply_markup(download_button)
