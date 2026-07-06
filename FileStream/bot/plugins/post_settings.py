@@ -1,4 +1,5 @@
 from pyrogram import Client, filters, StopPropagation
+from pyrogram.enums import ParseMode
 from pyrogram.types import (
     Message,
     CallbackQuery,
@@ -58,7 +59,7 @@ async def settings_handler(client, message):
     await message.reply_text(
         text,
         reply_markup=buttons,
-        parse_mode="HTML"
+        parse_mode=ParseMode.HTML
     )
 
 
@@ -171,7 +172,7 @@ async def handle_settings_input(client, message):
             "✅ **Caption updated!**\n\n"
             f"<pre>{text}</pre>\n\n"
             "Try `/movie <name>` to test",
-            parse_mode="HTML"
+            parse_mode=ParseMode.HTML
         )
     
     elif input_type == "button":
@@ -197,4 +198,4 @@ async def handle_settings_input(client, message):
             f"✅ **Branding updated!**\n\n"
             f"New: `{text}`\n\n"
             f"This will be watermark on posters"
-          )
+    )
