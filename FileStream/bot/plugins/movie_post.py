@@ -291,7 +291,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     draw.rounded_rectangle(
         [(ix, by), (ix + iw, by + bh)],
         radius=8, fill=(20, 20, 20, 230),
-        outline=(255, 200, 0, 255), width=2
+        outline=(255, 184, 0, 255), width=2
     )
     
     fst = get_font(22, bold=True)
