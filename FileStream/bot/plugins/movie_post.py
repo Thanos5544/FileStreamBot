@@ -360,6 +360,10 @@ def build_control_buttons(token, idx=0, total=1):
     ])
     
     buttons.append([
+        InlineKeyboardButton("USE NORMAL", callback_data=f"mvcolor|{token}|normal"),
+    ])
+    
+    buttons.append([
         InlineKeyboardButton("✅ USE THIS", callback_data=f"mvuse|{token}"),
     ])
     
