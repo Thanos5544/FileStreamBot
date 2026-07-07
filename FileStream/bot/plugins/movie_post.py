@@ -193,6 +193,8 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     final.save(out, format="JPEG", quality=95)
     out.seek(0)
     return out
+    
+    
     def format_caption(movie_data, settings):
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
     date = movie_data.get("release_date") or movie_data.get("first_air_date") or ""
