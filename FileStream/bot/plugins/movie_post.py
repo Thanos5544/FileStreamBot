@@ -16,7 +16,6 @@ TMDB_IMG = "https://image.tmdb.org/t/p/original"
 DEFAULT_BRANDING = "@Patrick_Botz"
 DEFAULT_CHANNEL = "@Patrick_Botz"
 DEFAULT_CAPTION = "<b>{title} ({year})</b>\n\n➡ <b>Audio:</b> <code>Hindi</code>\n➡ <b>Quality:</b> <code>480p, 720p, 1080p</code>\n➡ <b>Genres:</b> <code>{genres}</code>"
-DEFAULT_CAPTION_HINDI = "<b>{title} ({year})</b>\n\n➡ <b>ऑडियो:</b> <code>हिंदी</code>\n➡ <b>क्वालिटी:</b> <code>480p, 720p, 1080p</code>\n➡ <b>शैली:</b> <code>{genres}</code>"
 
 DEFAULT_BUTTONS = [
     {"text": "🔽 480p", "url": "https://t.me/Patrick_Botz"},
@@ -29,7 +28,7 @@ COLORS = {
     "red": (231, 76, 60), "orange": (230, 126, 34),
     "yellow": (241, 196, 15), "green": (46, 204, 113),
     "blue": (52, 152, 219), "purple": (155, 89, 182),
-    "black": (30, 30, 30),
+    "black": (30, 30, 30), "white": (240, 240, 240),
 }
 
 POST_CACHE = {}
@@ -58,9 +57,9 @@ def get_user_settings(user_id):
     return USER_SETTINGS[user_id]
 
 
-async def search_movie(query, year=None, lang="en"):
+async def search_movie(query, year=None):
     async with aiohttp.ClientSession() as s:
-        p = {"api_key": TMDB_API, "query": query, "language": lang}
+        p = {"api_key": TMDB_API, "query": query}
         if year:
             p["year"] = year
         async with s.get(f"{TMDB_BASE}/search/multi", params=p) as r:
@@ -68,9 +67,9 @@ async def search_movie(query, year=None, lang="en"):
             return [x for x in d.get("results", []) if x.get("media_type") in ["movie", "tv"]]
 
 
-async def get_details(mid, mtype, lang="en"):
+async def get_details(mid, mtype):
     async with aiohttp.ClientSession() as s:
-        p = {"api_key": TMDB_API, "append_to_response": "credits", "language": lang}
+        p = {"api_key": TMDB_API, "append_to_response": "credits"}
         async with s.get(f"{TMDB_BASE}/{mtype}/{mid}", params=p) as r:
             return await r.json()
 
@@ -100,25 +99,48 @@ def get_font(size, bold=False):
     return ImageFont.load_default()
 
 
-def create_left_gradient(size, color_rgb=None):
+def create_left_color_gradient(size, color_rgb):
+    """Left half color gradient - postify style"""
     g = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(g)
     w, h = size
+    r, gr, b = color_rgb
+    
     for x in range(w):
-        alpha = max(0, min(255, int(255 * (1 - x / (w * 0.55)))))
-        if color_rgb:
-            r, g_c, b = color_rgb
-            d.line([(x, 0), (x, h)], fill=(r, g_c, b, alpha))
+        if x < w * 0.5:
+            alpha = 200
+        elif x < w * 0.7:
+            fade = (x - w * 0.5) / (w * 0.2)
+            alpha = int(200 * (1 - fade))
         else:
-            d.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha))
+            alpha = 0
+        d.line([(x, 0), (x, h)], fill=(r, gr, b, alpha))
     return g
 
 
-def create_dark_overlay(size, opacity=90):
+def create_left_dark_gradient(size):
+    """Default dark gradient on left"""
+    g = Image.new("RGBA", size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(g)
+    w, h = size
+    
+    for x in range(w):
+        if x < w * 0.5:
+            alpha = 220
+        elif x < w * 0.75:
+            fade = (x - w * 0.5) / (w * 0.25)
+            alpha = int(220 * (1 - fade))
+        else:
+            alpha = 0
+        d.line([(x, 0), (x, h)], fill=(15, 20, 30, alpha))
+    return g
+
+
+def create_dark_overlay(size, opacity=60):
     return Image.new("RGBA", size, (0, 0, 0, opacity))
 
 
-async def create_poster(image_url, movie_data, color_name=None, branding=None, channel=None):
+async def create_poster(image_url, movie_data, color_name=None, channel=None):
     img_bytes = await download_image(image_url)
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     
@@ -138,16 +160,16 @@ async def create_poster(image_url, movie_data, color_name=None, branding=None, c
     top = (nh - target[1]) // 2
     img = img.crop((left, top, left + target[0], top + target[1]))
     
-    dark_overlay = create_dark_overlay(target, opacity=90)
-    img = Image.alpha_composite(img, dark_overlay)
+    dark = create_dark_overlay(target, opacity=60)
+    img = Image.alpha_composite(img, dark)
     
     if color_name and color_name in COLORS:
         color_rgb = COLORS[color_name]
-        left_gradient = create_left_gradient(target, color_rgb=color_rgb)
+        gradient = create_left_color_gradient(target, color_rgb=color_rgb)
     else:
-        left_gradient = create_left_gradient(target)
+        gradient = create_left_dark_gradient(target)
     
-    img = Image.alpha_composite(img, left_gradient)
+    img = Image.alpha_composite(img, gradient)
     
     draw = ImageDraw.Draw(img)
     
@@ -182,24 +204,9 @@ async def create_poster(image_url, movie_data, color_name=None, branding=None, c
         if creators:
             director = creators[0].get("name", "").upper()
     
-    if branding:
-        fw2 = get_font(18, bold=True)
-        wb = draw.textbbox((0, 0), branding, font=fw2)
-        ww = wb[2] - wb[0]
-        wh = wb[3] - wb[1]
-        wx = target[0] - ww - 30
-        wy = 30
-        padding = 8
-        draw.rounded_rectangle(
-            [(wx - padding, wy - padding), (wx + ww + padding, wy + wh + padding + 5)],
-            radius=6, fill=(0, 0, 0, 150)
-        )
-        draw.text((wx + 1, wy + 1), branding, font=fw2, fill=(0, 0, 0, 200))
-        draw.text((wx, wy), branding, font=fw2, fill=(255, 255, 255, 240))
-    
     if channel:
-        fc = get_font(18, bold=True)
-        draw.text((30, 32), channel, font=fc, fill=(255, 255, 255, 220))
+        fc = get_font(20, bold=True)
+        draw.text((30, 32), channel, font=fc, fill=(255, 255, 255, 240))
     
     if director:
         ff = get_font(13, bold=True)
@@ -264,7 +271,7 @@ async def create_poster(image_url, movie_data, color_name=None, branding=None, c
     bw = 200
     bh = 50
     
-    bc = COLORS[color_name] if color_name and color_name in COLORS else (231, 76, 60)
+    bc = COLORS[color_name] if color_name and color_name in COLORS else (52, 152, 219)
     
     draw.rounded_rectangle([(30, by), (30 + bw, by + bh)], radius=8, fill=bc)
     
@@ -348,16 +355,14 @@ def build_control_buttons(token, idx=0, total=1):
         InlineKeyboardButton("🔵", callback_data=f"mvcolor|{token}|blue"),
         InlineKeyboardButton("🟣", callback_data=f"mvcolor|{token}|purple"),
         InlineKeyboardButton("⚫", callback_data=f"mvcolor|{token}|black"),
-        InlineKeyboardButton("🔄 Reset", callback_data=f"mvcolor|{token}|none"),
+        InlineKeyboardButton("⚪", callback_data=f"mvcolor|{token}|white"),
     ])
     
     buttons.append([
-        InlineKeyboardButton("🇬🇧 English", callback_data=f"mvlang|{token}|en"),
-        InlineKeyboardButton("🇮🇳 हिंदी", callback_data=f"mvlang|{token}|hi"),
+        InlineKeyboardButton("✅ USE THIS", callback_data=f"mvuse|{token}"),
     ])
     
     buttons.append([
-        InlineKeyboardButton("✅ USE NORMAL", callback_data=f"mvuse|{token}"),
         InlineKeyboardButton("❌ Cancel", callback_data=f"mvcancel|{token}"),
     ])
     
@@ -375,267 +380,3 @@ def build_download_buttons(settings):
         buttons.append(row)
     
     return InlineKeyboardMarkup(buttons)
-
-
-@Client.on_message(filters.command(["movie", "post", "tv"]))
-async def movie_handler(client, message):
-    cleanup_cache()
-    
-    if len(message.command) < 2:
-        return await message.reply_text(
-            "🎬 <b>Movie Post Generator</b>\n\n"
-            "<b>Usage:</b>\n"
-            "<code>/movie the witcher 2019</code>\n"
-            "<code>/tv breaking bad</code>\n\n"
-            "<b>Settings:</b> <code>/postsettings</code>"
-        )
-    
-    query_text = " ".join(message.command[1:])
-    ym = re.search(r"\b(19|20)\d{2}\b", query_text)
-    year = ym.group() if ym else None
-    query = query_text.replace(year, "").strip() if year else query_text
-    
-    msg = await message.reply_text(f"🔍 <b>Searching:</b> <code>{query_text}</code>")
-    
-    try:
-        results = await search_movie(query, year)
-        
-        if not results:
-            return await msg.edit_text("❌ <b>Not found</b>")
-        
-        movie = results[0]
-        if year:
-            for r in results:
-                d = r.get("release_date") or r.get("first_air_date", "")
-                if d.startswith(year):
-                    movie = r
-                    break
-        
-        mtype = movie.get("media_type", "movie")
-        details = await get_details(movie["id"], mtype)
-        images = await get_images(movie["id"], mtype)
-        
-        image_urls = []
-        if details.get("backdrop_path"):
-            image_urls.append(TMDB_IMG + details["backdrop_path"])
-        for bd in images.get("backdrops", [])[:20]:
-            url = TMDB_IMG + bd["file_path"]
-            if url not in image_urls:
-                image_urls.append(url)
-        
-        if not image_urls:
-            return await msg.edit_text("❌ <b>No images</b>")
-        
-        token = uuid.uuid4().hex[:10]
-        POST_CACHE[token] = {
-            "images": image_urls,
-            "current_index": 0,
-            "movie_data": details,
-            "movie_id": movie["id"],
-            "media_type": mtype,
-            "selected_color": None,
-            "language": "en",
-            "user_id": message.from_user.id,
-            "chat_id": message.chat.id,
-            "reply_to": message.id,
-            "time": time.time()
-        }
-        
-        settings = get_user_settings(message.from_user.id)
-        
-        await msg.edit_text("🎨 <b>Creating poster...</b>")
-        
-        poster = await create_poster(
-            image_urls[0], details,
-            color_name=None,
-            branding=settings["branding"],
-            channel=settings.get("channel", DEFAULT_CHANNEL)
-        )
-        
-        caption = format_caption(details, settings)
-        
-        await msg.delete()
-        
-        await client.send_photo(
-            chat_id=message.chat.id,
-            photo=poster,
-            caption=caption,
-            reply_markup=build_control_buttons(token, 0, len(image_urls)),
-            reply_to_message_id=message.id,
-            parse_mode=ParseMode.HTML
-        )
-    
-    except Exception as e:
-        await msg.edit_text(f"❌ <b>Error</b>\n\n<code>{str(e)[:400]}</code>")
-
-
-@Client.on_callback_query(cb_starts("mvnav|"), group=-999)
-async def nav_cb(client, query):
-    try:
-        _, token, action = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if not data:
-            return await query.answer("Expired!", show_alert=True)
-        if query.from_user.id != data["user_id"]:
-            return await query.answer("Not for you!", show_alert=True)
-        if action == "info":
-            return await query.answer(f"{data['current_index'] + 1}/{len(data['images'])}")
-        
-        total = len(data["images"])
-        if action == "next":
-            data["current_index"] = (data["current_index"] + 1) % total
-        else:
-            data["current_index"] = (data["current_index"] - 1) % total
-        
-        await query.answer(f"Loading {data['current_index'] + 1}...")
-        
-        settings = get_user_settings(query.from_user.id)
-        poster = await create_poster(
-            data["images"][data["current_index"]],
-            data["movie_data"],
-            color_name=data.get("selected_color"),
-            branding=settings["branding"],
-            channel=settings.get("channel", DEFAULT_CHANNEL)
-        )
-        caption = format_caption(data["movie_data"], settings)
-        
-        await query.message.edit_media(
-            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
-            reply_markup=build_control_buttons(token, data["current_index"], total)
-        )
-    except Exception as e:
-        print(f"Nav: {e}")
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("mvcolor|"), group=-999)
-async def color_cb(client, query):
-    try:
-        _, token, color = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if not data:
-            return await query.answer("Expired!", show_alert=True)
-        if query.from_user.id != data["user_id"]:
-            return await query.answer("Not for you!", show_alert=True)
-        
-        if color == "none":
-            data["selected_color"] = None
-            await query.answer("Color reset")
-        else:
-            data["selected_color"] = color
-            await query.answer(f"Applied {color}")
-        
-        settings = get_user_settings(query.from_user.id)
-        poster = await create_poster(
-            data["images"][data["current_index"]],
-            data["movie_data"],
-            color_name=data.get("selected_color"),
-            branding=settings["branding"],
-            channel=settings.get("channel", DEFAULT_CHANNEL)
-        )
-        caption = format_caption(data["movie_data"], settings)
-        
-        await query.message.edit_media(
-            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
-            reply_markup=build_control_buttons(token, data["current_index"], len(data["images"]))
-        )
-    except Exception as e:
-        print(f"Color: {e}")
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("mvlang|"), group=-999)
-async def lang_cb(client, query):
-    try:
-        _, token, lang = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if not data:
-            return await query.answer("Expired!", show_alert=True)
-        if query.from_user.id != data["user_id"]:
-            return await query.answer("Not for you!", show_alert=True)
-        
-        lang_name = "हिंदी" if lang == "hi" else "English"
-        await query.answer(f"Loading in {lang_name}...")
-        
-        data["language"] = lang
-        new_details = await get_details(data["movie_id"], data["media_type"], lang=lang)
-        data["movie_data"] = new_details
-        
-        settings = get_user_settings(query.from_user.id)
-        
-        if lang == "hi":
-            settings["caption"] = DEFAULT_CAPTION_HINDI
-        else:
-            settings["caption"] = DEFAULT_CAPTION
-        
-        poster = await create_poster(
-            data["images"][data["current_index"]],
-            new_details,
-            color_name=data.get("selected_color"),
-            branding=settings["branding"],
-            channel=settings.get("channel", DEFAULT_CHANNEL)
-        )
-        caption = format_caption(new_details, settings)
-        
-        await query.message.edit_media(
-            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
-            reply_markup=build_control_buttons(token, data["current_index"], len(data["images"]))
-        )
-    except Exception as e:
-        print(f"Lang: {e}")
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("mvuse|"), group=-999)
-async def use_cb(client, query):
-    try:
-        _, token = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if not data:
-            return await query.answer("Expired!", show_alert=True)
-        if query.from_user.id != data["user_id"]:
-            return await query.answer("Not for you!", show_alert=True)
-        
-        await query.answer("✅ Finalized!")
-        
-        settings = get_user_settings(query.from_user.id)
-        
-        poster = await create_poster(
-            data["images"][data["current_index"]],
-            data["movie_data"],
-            color_name=None,
-            branding=None,
-            channel=None
-        )
-        
-        caption = format_caption(data["movie_data"], settings)
-        
-        await query.message.edit_media(
-            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
-            reply_markup=build_download_buttons(settings)
-        )
-        
-        POST_CACHE.pop(token, None)
-    except Exception as e:
-        print(f"Use: {e}")
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("mvcancel|"), group=-999)
-async def cancel_cb(client, query):
-    try:
-        _, token = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if data and query.from_user.id != data["user_id"]:
-            return await query.answer("Not for you!", show_alert=True)
-        POST_CACHE.pop(token, None)
-        await query.answer("Cancelled")
-        await query.message.delete()
-    except:
-        pass
-    finally:
-        raise StopPropagation
