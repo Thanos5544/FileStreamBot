@@ -266,7 +266,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         
         sy = iy + 30
         for line in lines:
-            draw.text((30, sy), line, font=fs, fill=(210, 210, 210, 230))
+            draw.text((30, sy), line, font=fs, fill=(200,200,200,230))
             sy += 20
     
     by = target[1] - 100
