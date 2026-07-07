@@ -380,3 +380,201 @@ def build_download_buttons(settings):
         buttons.append(row)
     
     return InlineKeyboardMarkup(buttons)
+
+
+@Client.on_message(filters.command(["movie", "post", "tv"]))
+async def movie_handler(client, message):
+    cleanup_cache()
+    
+    if len(message.command) < 2:
+        return await message.reply_text(
+            "🎬 <b>Movie Post Generator</b>\n\n"
+            "<b>Usage:</b>\n"
+            "<code>/movie the witcher 2019</code>\n"
+            "<code>/tv breaking bad</code>\n\n"
+            "<b>Settings:</b> <code>/postsettings</code>"
+        )
+    
+    query_text = " ".join(message.command[1:])
+    ym = re.search(r"\b(19|20)\d{2}\b", query_text)
+    year = ym.group() if ym else None
+    query = query_text.replace(year, "").strip() if year else query_text
+    
+    msg = await message.reply_text(f"🔍 <b>Searching:</b> <code>{query_text}</code>")
+    
+    try:
+        results = await search_movie(query, year)
+        
+        if not results:
+            return await msg.edit_text("❌ <b>Not found</b>")
+        
+        movie = results[0]
+        if year:
+            for r in results:
+                d = r.get("release_date") or r.get("first_air_date", "")
+                if d.startswith(year):
+                    movie = r
+                    break
+        
+        mtype = movie.get("media_type", "movie")
+        details = await get_details(movie["id"], mtype)
+        images = await get_images(movie["id"], mtype)
+        
+        image_urls = []
+        if details.get("backdrop_path"):
+            image_urls.append(TMDB_IMG + details["backdrop_path"])
+        for bd in images.get("backdrops", [])[:20]:
+            url = TMDB_IMG + bd["file_path"]
+            if url not in image_urls:
+                image_urls.append(url)
+        
+        if not image_urls:
+            return await msg.edit_text("❌ <b>No images</b>")
+        
+        token = uuid.uuid4().hex[:10]
+        POST_CACHE[token] = {
+            "images": image_urls,
+            "current_index": 0,
+            "movie_data": details,
+            "selected_color": None,
+            "user_id": message.from_user.id,
+            "chat_id": message.chat.id,
+            "reply_to": message.id,
+            "time": time.time()
+        }
+        
+        settings = get_user_settings(message.from_user.id)
+        
+        await msg.edit_text("🎨 <b>Creating poster...</b>")
+        
+        poster = await create_poster(
+            image_urls[0], details,
+            color_name=None,
+            channel=settings.get("channel", DEFAULT_CHANNEL)
+        )
+        
+        caption = format_caption(details, settings)
+        
+        await msg.delete()
+        
+        await client.send_photo(
+            chat_id=message.chat.id,
+            photo=poster,
+            caption=caption,
+            reply_markup=build_control_buttons(token, 0, len(image_urls)),
+            reply_to_message_id=message.id,
+            parse_mode=ParseMode.HTML
+        )
+    
+    except Exception as e:
+        await msg.edit_text(f"❌ <b>Error</b>\n\n<code>{str(e)[:400]}</code>")
+
+
+@Client.on_callback_query(cb_starts("mvnav|"), group=-999)
+async def nav_cb(client, query):
+    try:
+        _, token, action = query.data.split("|")
+        data = POST_CACHE.get(token)
+        if not data:
+            return await query.answer("Expired!", show_alert=True)
+        if query.from_user.id != data["user_id"]:
+            return await query.answer("Not for you!", show_alert=True)
+        if action == "info":
+            return await query.answer(f"{data['current_index'] + 1}/{len(data['images'])}")
+        
+        total = len(data["images"])
+        if action == "next":
+            data["current_index"] = (data["current_index"] + 1) % total
+        else:
+            data["current_index"] = (data["current_index"] - 1) % total
+        
+        await query.answer(f"Loading {data['current_index'] + 1}...")
+        
+        settings = get_user_settings(query.from_user.id)
+        poster = await create_poster(
+            data["images"][data["current_index"]],
+            data["movie_data"],
+            color_name=data.get("selected_color"),
+            channel=settings.get("channel", DEFAULT_CHANNEL)
+        )
+        caption = format_caption(data["movie_data"], settings)
+        
+        await query.message.edit_media(
+            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
+            reply_markup=build_control_buttons(token, data["current_index"], total)
+        )
+    except Exception as e:
+        print(f"Nav: {e}")
+    finally:
+        raise StopPropagation
+
+
+@Client.on_callback_query(cb_starts("mvcolor|"), group=-999)
+async def color_cb(client, query):
+    try:
+        _, token, color = query.data.split("|")
+        data = POST_CACHE.get(token)
+        if not data:
+            return await query.answer("Expired!", show_alert=True)
+        if query.from_user.id != data["user_id"]:
+            return await query.answer("Not for you!", show_alert=True)
+        
+        data["selected_color"] = color
+        await query.answer(f"Applied {color}")
+        
+        settings = get_user_settings(query.from_user.id)
+        poster = await create_poster(
+            data["images"][data["current_index"]],
+            data["movie_data"],
+            color_name=color,
+            channel=settings.get("channel", DEFAULT_CHANNEL)
+        )
+        caption = format_caption(data["movie_data"], settings)
+        
+        await query.message.edit_media(
+            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
+            reply_markup=build_control_buttons(token, data["current_index"], len(data["images"]))
+        )
+    except Exception as e:
+        print(f"Color: {e}")
+    finally:
+        raise StopPropagation
+
+
+@Client.on_callback_query(cb_starts("mvuse|"), group=-999)
+async def use_cb(client, query):
+    try:
+        _, token = query.data.split("|")
+        data = POST_CACHE.get(token)
+        if not data:
+            return await query.answer("Expired!", show_alert=True)
+        if query.from_user.id != data["user_id"]:
+            return await query.answer("Not for you!", show_alert=True)
+        
+        await query.answer("✅ Finalized!")
+        
+        settings = get_user_settings(query.from_user.id)
+        
+        await query.message.edit_reply_markup(build_download_buttons(settings))
+        
+        POST_CACHE.pop(token, None)
+    except Exception as e:
+        print(f"Use: {e}")
+    finally:
+        raise StopPropagation
+
+
+@Client.on_callback_query(cb_starts("mvcancel|"), group=-999)
+async def cancel_cb(client, query):
+    try:
+        _, token = query.data.split("|")
+        data = POST_CACHE.get(token)
+        if data and query.from_user.id != data["user_id"]:
+            return await query.answer("Not for you!", show_alert=True)
+        POST_CACHE.pop(token, None)
+        await query.answer("Cancelled")
+        await query.message.delete()
+    except:
+        pass
+    finally:
+        raise StopPropagation
