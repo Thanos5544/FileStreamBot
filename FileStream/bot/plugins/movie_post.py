@@ -119,20 +119,21 @@ def create_left_color_gradient(size, color_rgb):
 
 
 def create_left_dark_gradient(size):
-    """Default dark gradient on left"""
+    """Clean dark gradient (No blue tint)"""
     g = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(g)
     w, h = size
     
     for x in range(w):
         if x < w * 0.5:
-            alpha = 220
+            alpha = 200 # Thoda dark
         elif x < w * 0.75:
             fade = (x - w * 0.5) / (w * 0.25)
-            alpha = int(220 * (1 - fade))
+            alpha = int(200 * (1 - fade))
         else:
             alpha = 0
-        d.line([(x, 0), (x, h)], fill=(15, 20, 30, alpha))
+        # Yahan (0, 0, 0) kar diya hai, jisse blue tint hat gaya
+        d.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha))
     return g
 
 
