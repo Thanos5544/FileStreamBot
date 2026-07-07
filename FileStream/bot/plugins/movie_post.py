@@ -110,7 +110,7 @@ def create_left_color_gradient(size, color_rgb):
         if x < w * 0.45:
             alpha = 150
         elif x < w * 0.65:
-            fade = (x - w * 0.5) / (w * 0.2)
+            fade = (x - w * 0.45) / (w * 0.20)
             alpha = int(200 * (1 - fade))
         else:
             alpha = 0
