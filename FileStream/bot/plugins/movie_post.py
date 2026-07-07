@@ -100,18 +100,18 @@ def get_font(size, bold=False):
 
 
 def create_left_color_gradient(size, color_rgb):
-    """Left half color gradient - postify style"""
+    """Left half color gradient - postify style (subtle)"""
     g = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(g)
     w, h = size
     r, gr, b = color_rgb
-    
+
     for x in range(w):
-        if x < w * 0.5:
-            alpha = 200
-        elif x < w * 0.7:
-            fade = (x - w * 0.5) / (w * 0.2)
-            alpha = int(200 * (1 - fade))
+        if x < w * 0.35:
+            alpha = 180
+        elif x < w * 0.65:
+            fade = (x - w * 0.35) / (w * 0.30)
+            alpha = int(180 * (1 - fade))
         else:
             alpha = 0
         d.line([(x, 0), (x, h)], fill=(r, gr, b, alpha))
@@ -119,20 +119,19 @@ def create_left_color_gradient(size, color_rgb):
 
 
 def create_left_dark_gradient(size):
-    """Clean dark gradient (No blue tint)"""
+    """Postify style - subtle dark gradient, NO blue tint"""
     g = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(g)
     w, h = size
-    
+
     for x in range(w):
         if x < w * 0.35:
-            alpha = 180 # Thoda dark
+            alpha = 180
         elif x < w * 0.65:
             fade = (x - w * 0.35) / (w * 0.30)
             alpha = int(180 * (1 - fade))
         else:
             alpha = 0
-        # Yahan (0, 0, 0) kar diya hai, jisse blue tint hat gaya
         d.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha))
     return g
 
@@ -142,61 +141,60 @@ def create_dark_overlay(size, opacity=30):
 
 
 async def create_poster(image_url, movie_data, color_name=None, channel=None):
-    # Agar color_name 'normal' hai to usse None kar do (default look ke liye)
     if color_name == "normal":
         color_name = None
-        
+
     img_bytes = await download_image(image_url)
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-    
+
     target = (1280, 720)
     r = img.size[0] / img.size[1]
     tr = target[0] / target[1]
-    
+
     if r > tr:
         nh = target[1]
         nw = int(nh * r)
     else:
         nw = target[0]
         nh = int(nw / r)
-    
+
     img = img.resize((nw, nh), Image.LANCZOS)
     left = (nw - target[0]) // 2
     top = (nh - target[1]) // 2
     img = img.crop((left, top, left + target[0], top + target[1]))
-    
-    dark = create_dark_overlay(target, opacity=60)
+
+    dark = create_dark_overlay(target, opacity=30)
     img = Image.alpha_composite(img, dark)
-    
+
     if color_name and color_name in COLORS:
         color_rgb = COLORS[color_name]
         gradient = create_left_color_gradient(target, color_rgb=color_rgb)
     else:
         gradient = create_left_dark_gradient(target)
-    
+
     img = Image.alpha_composite(img, gradient)
     draw = ImageDraw.Draw(img)
-    
+
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
     date = movie_data.get("release_date") or movie_data.get("first_air_date") or ""
     year = date[:4] if date else "N/A"
-    
+
     genres = movie_data.get("genres", [])
     if genres and isinstance(genres[0], dict):
         gn = [g.get("name", "") for g in genres[:2]]
     else:
         gn = genres[:2] if genres else []
     gstr = " & ".join(gn).upper() if gn else "MOVIE"
-    
+
     runtime = movie_data.get("runtime") or 0
     if not runtime:
         et = movie_data.get("episode_run_time", [])
         runtime = et[0] if et else 0
     duration = f"{runtime} MIN" if runtime else ""
-    
+
     overview = movie_data.get("overview", "")
     rating = movie_data.get("vote_average", 0)
-    
+
     director = ""
     crew = movie_data.get("credits", {}).get("crew", [])
     for p in crew:
@@ -207,9 +205,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         creators = movie_data.get("created_by", [])
         if creators:
             director = creators[0].get("name", "").upper()
-    
-    # BRADING REMOVED FROM HERE
-    
+
     if director:
         ff = get_font(13, bold=True)
         dc = COLORS[color_name] if color_name and color_name in COLORS else (46, 204, 113)
@@ -217,7 +213,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         b = draw.textbbox((0, 0), "FILMED BY", font=ff)
         fw = b[2] - b[0]
         draw.text((30 + fw + 10, 220), director[:30], font=ff, fill=dc)
-    
+
     tu = title.upper()
     if len(tu) > 20:
         ts = 45
@@ -225,26 +221,26 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         ts = 55
     else:
         ts = 65
-    
+
     ft = get_font(ts, bold=True)
     draw.text((30, 255), tu, font=ft, fill=(255, 255, 255, 255))
-    
+
     lc = COLORS[color_name] if color_name and color_name in COLORS else (46, 204, 113)
     tb = draw.textbbox((30, 255), tu, font=ft)
     lw = min(tb[2] - tb[0], 180)
     ly = tb[3] + 8
     draw.rectangle([(30, ly), (30 + lw, ly + 4)], fill=lc)
-    
+
     fi = get_font(16, bold=True)
     it = year
     if gstr:
         it += f"  •  {gstr}"
     if duration:
         it += f"  •  {duration}"
-    
+
     iy = ly + 20
     draw.text((30, iy), it, font=fi, fill=(220, 220, 220, 255))
-    
+
     if overview:
         fs = get_font(13)
         mc = 70
@@ -263,20 +259,20 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
             lines.append(cl)
         if len(lines) == 3 and len(overview) > 200:
             lines[2] = lines[2][:65] + "..."
-        
+
         sy = iy + 30
         for line in lines:
             draw.text((30, sy), line, font=fs, fill=(210, 210, 210, 230))
             sy += 20
-    
+
     by = target[1] - 100
     bw = 200
     bh = 50
-    
+
     bc = COLORS[color_name] if color_name and color_name in COLORS else (52, 152, 219)
-    
+
     draw.rounded_rectangle([(30, by), (30 + bw, by + bh)], radius=8, fill=bc)
-    
+
     fb = get_font(18, bold=True)
     bt = "▶ WATCH NOW"
     b2 = draw.textbbox((0, 0), bt, font=fb)
@@ -284,23 +280,23 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     btx = 30 + (bw - btw) // 2
     bty = by + (bh - (b2[3] - b2[1])) // 2 - 4
     draw.text((btx, bty), bt, font=fb, fill=(255, 255, 255, 255))
-    
+
     ix = 30 + bw + 15
     iw = 170
-    
+
     draw.rounded_rectangle(
         [(ix, by), (ix + iw, by + bh)],
         radius=8, fill=(20, 20, 20, 230),
         outline=(255, 200, 0, 255), width=2
     )
-    
+
     fst = get_font(22, bold=True)
     draw.text((ix + 15, by + 10), "✦", font=fst, fill=(255, 200, 0, 255))
-    
+
     fr = get_font(16, bold=True)
     rt = f"{rating:.1f} IMDb" if rating else "N/A IMDb"
     draw.text((ix + 50, by + 16), rt, font=fr, fill=(255, 255, 255, 255))
-    
+
     final = img.convert("RGB")
     out = io.BytesIO()
     final.save(out, format="JPEG", quality=95)
@@ -312,19 +308,19 @@ def format_caption(movie_data, settings):
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
     date = movie_data.get("release_date") or movie_data.get("first_air_date") or ""
     year = date[:4] if date else "N/A"
-    
+
     genres = movie_data.get("genres", [])
     if genres and isinstance(genres[0], dict):
         gn = [g.get("name", "") for g in genres]
     else:
         gn = genres if genres else []
     gstr = " • ".join(gn) if gn else "N/A"
-    
+
     rating = movie_data.get("vote_average", 0)
     overview = movie_data.get("overview", "")
-    
+
     template = settings.get("caption", DEFAULT_CAPTION)
-    
+
     try:
         return template.format(
             title=title, year=year, genres=gstr,
@@ -338,60 +334,60 @@ def format_caption(movie_data, settings):
 
 def build_control_buttons(token, idx=0, total=1):
     buttons = []
-    
+
     if total > 1:
         buttons.append([
             InlineKeyboardButton("⬅️ PREV", callback_data=f"mvnav|{token}|prev"),
             InlineKeyboardButton(f"{idx + 1}/{total}", callback_data=f"mvnav|{token}|info"),
             InlineKeyboardButton("NEXT ➡️", callback_data=f"mvnav|{token}|next"),
         ])
-    
+
     buttons.append([
         InlineKeyboardButton("🔴", callback_data=f"mvcolor|{token}|red"),
         InlineKeyboardButton("🟠", callback_data=f"mvcolor|{token}|orange"),
         InlineKeyboardButton("🟡", callback_data=f"mvcolor|{token}|yellow"),
         InlineKeyboardButton("🟢", callback_data=f"mvcolor|{token}|green"),
     ])
-    
+
     buttons.append([
         InlineKeyboardButton("🔵", callback_data=f"mvcolor|{token}|blue"),
         InlineKeyboardButton("🟣", callback_data=f"mvcolor|{token}|purple"),
         InlineKeyboardButton("⚫", callback_data=f"mvcolor|{token}|black"),
         InlineKeyboardButton("⚪", callback_data=f"mvcolor|{token}|white"),
     ])
-    
+
     buttons.append([
         InlineKeyboardButton("USE NORMAL", callback_data=f"mvcolor|{token}|normal"),
     ])
-    
+
     buttons.append([
         InlineKeyboardButton("✅ USE THIS", callback_data=f"mvuse|{token}"),
     ])
-    
+
     buttons.append([
         InlineKeyboardButton("❌ Cancel", callback_data=f"mvcancel|{token}"),
     ])
-    
+
     return InlineKeyboardMarkup(buttons)
 
 
 def build_download_buttons(settings):
     buttons = []
     ub = settings.get("buttons", DEFAULT_BUTTONS)
-    
+
     for i in range(0, len(ub), 2):
         row = [InlineKeyboardButton(ub[i]["text"], url=ub[i]["url"])]
         if i + 1 < len(ub):
             row.append(InlineKeyboardButton(ub[i + 1]["text"], url=ub[i + 1]["url"]))
         buttons.append(row)
-    
+
     return InlineKeyboardMarkup(buttons)
 
 
 @Client.on_message(filters.command(["movie", "post", "tv"]))
 async def movie_handler(client, message):
     cleanup_cache()
-    
+
     if len(message.command) < 2:
         return await message.reply_text(
             "🎬 <b>Movie Post Generator</b>\n\n"
@@ -400,20 +396,20 @@ async def movie_handler(client, message):
             "<code>/tv breaking bad</code>\n\n"
             "<b>Settings:</b> <code>/postsettings</code>"
         )
-    
+
     query_text = " ".join(message.command[1:])
     ym = re.search(r"\b(19|20)\d{2}\b", query_text)
     year = ym.group() if ym else None
     query = query_text.replace(year, "").strip() if year else query_text
-    
+
     msg = await message.reply_text(f"🔍 <b>Searching:</b> <code>{query_text}</code>")
-    
+
     try:
         results = await search_movie(query, year)
-        
+
         if not results:
             return await msg.edit_text("❌ <b>Not found</b>")
-        
+
         movie = results[0]
         if year:
             for r in results:
@@ -421,11 +417,11 @@ async def movie_handler(client, message):
                 if d.startswith(year):
                     movie = r
                     break
-        
+
         mtype = movie.get("media_type", "movie")
         details = await get_details(movie["id"], mtype)
         images = await get_images(movie["id"], mtype)
-        
+
         image_urls = []
         if details.get("backdrop_path"):
             image_urls.append(TMDB_IMG + details["backdrop_path"])
@@ -433,10 +429,10 @@ async def movie_handler(client, message):
             url = TMDB_IMG + bd["file_path"]
             if url not in image_urls:
                 image_urls.append(url)
-        
+
         if not image_urls:
             return await msg.edit_text("❌ <b>No images</b>")
-        
+
         token = uuid.uuid4().hex[:10]
         POST_CACHE[token] = {
             "images": image_urls,
@@ -448,21 +444,21 @@ async def movie_handler(client, message):
             "reply_to": message.id,
             "time": time.time()
         }
-        
+
         settings = get_user_settings(message.from_user.id)
-        
+
         await msg.edit_text("🎨 <b>Creating poster...</b>")
-        
+
         poster = await create_poster(
             image_urls[0], details,
             color_name=None,
-            channel=settings.get("channel", DEFAULT_CHANNEL)
+            channel=None
         )
-        
+
         caption = format_caption(details, settings)
-        
+
         await msg.delete()
-        
+
         await client.send_photo(
             chat_id=message.chat.id,
             photo=poster,
@@ -471,47 +467,50 @@ async def movie_handler(client, message):
             reply_to_message_id=message.id,
             parse_mode=ParseMode.HTML
         )
-    
+
     except Exception as e:
         await msg.edit_text(f"❌ <b>Error</b>\n\n<code>{str(e)[:400]}</code>")
 
 
-@Client.on_callback_query(cb_starts("mvcolor|"), group=-999)
-async def color_cb(client, query):
+@Client.on_callback_query(cb_starts("mvnav|"), group=-999)
+async def nav_cb(client, query):
     try:
-        _, token, color = query.data.split("|")
+        _, token, action = query.data.split("|")
         data = POST_CACHE.get(token)
         if not data:
             return await query.answer("Expired!", show_alert=True)
         if query.from_user.id != data["user_id"]:
             return await query.answer("Not for you!", show_alert=True)
-        
-        # AGAR NORMAL CLICK KIYA, TO COLOR HATA DO
-        if color == "normal":
-            data["selected_color"] = None
-        else:
-            data["selected_color"] = color
-            
-        await query.answer(f"Applied {color}")
-        
+
+        if action == "info":
+            return await query.answer(f"{data['current_index'] + 1}/{len(data['images'])}")
+
+        total = len(data["images"])
+        if action == "next":
+            data["current_index"] = (data["current_index"] + 1) % total
+        elif action == "prev":
+            data["current_index"] = (data["current_index"] - 1) % total
+
+        await query.answer()
+
         settings = get_user_settings(query.from_user.id)
         poster = await create_poster(
             data["images"][data["current_index"]],
             data["movie_data"],
             color_name=data.get("selected_color"),
-            channel=None # Yahan None kar do taki branding na aaye
+            channel=None
         )
         caption = format_caption(data["movie_data"], settings)
-        
+
         await query.message.edit_media(
             media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
-            reply_markup=build_control_buttons(token, data["current_index"], len(data["images"]))
+            reply_markup=build_control_buttons(token, data["current_index"], total)
         )
     except Exception as e:
-        print(f"Color: {e}")
+        print(f"Nav: {e}")
     finally:
         raise StopPropagation
-        
+
 
 @Client.on_callback_query(cb_starts("mvcolor|"), group=-999)
 async def color_cb(client, query):
@@ -522,19 +521,23 @@ async def color_cb(client, query):
             return await query.answer("Expired!", show_alert=True)
         if query.from_user.id != data["user_id"]:
             return await query.answer("Not for you!", show_alert=True)
-        
-        data["selected_color"] = color
+
+        if color == "normal":
+            data["selected_color"] = None
+        else:
+            data["selected_color"] = color
+
         await query.answer(f"Applied {color}")
-        
+
         settings = get_user_settings(query.from_user.id)
         poster = await create_poster(
             data["images"][data["current_index"]],
             data["movie_data"],
-            color_name=color,
-            channel=settings.get("channel", DEFAULT_CHANNEL)
+            color_name=data.get("selected_color"),
+            channel=None
         )
         caption = format_caption(data["movie_data"], settings)
-        
+
         await query.message.edit_media(
             media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
             reply_markup=build_control_buttons(token, data["current_index"], len(data["images"]))
@@ -554,13 +557,13 @@ async def use_cb(client, query):
             return await query.answer("Expired!", show_alert=True)
         if query.from_user.id != data["user_id"]:
             return await query.answer("Not for you!", show_alert=True)
-        
+
         await query.answer("✅ Finalized!")
-        
+
         settings = get_user_settings(query.from_user.id)
-        
+
         await query.message.edit_reply_markup(build_download_buttons(settings))
-        
+
         POST_CACHE.pop(token, None)
     except Exception as e:
         print(f"Use: {e}")
