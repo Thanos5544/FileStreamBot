@@ -141,6 +141,10 @@ def create_dark_overlay(size, opacity=60):
 
 
 async def create_poster(image_url, movie_data, color_name=None, channel=None):
+    # Agar color_name 'normal' hai to usse None kar do (default look ke liye)
+    if color_name == "normal":
+        color_name = None
+        
     img_bytes = await download_image(image_url)
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
     
@@ -170,7 +174,6 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         gradient = create_left_dark_gradient(target)
     
     img = Image.alpha_composite(img, gradient)
-    
     draw = ImageDraw.Draw(img)
     
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
@@ -204,9 +207,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         if creators:
             director = creators[0].get("name", "").upper()
     
-    if channel:
-        fc = get_font(20, bold=True)
-        draw.text((30, 32), channel, font=fc, fill=(255, 255, 255, 240))
+    # BRADING REMOVED FROM HERE
     
     if director:
         ff = get_font(13, bold=True)
