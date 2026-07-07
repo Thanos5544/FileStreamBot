@@ -127,7 +127,7 @@ def create_left_dark_gradient(size):
     for x in range(w):
         if x < w * 0.45:
             alpha = 150
-        elif x < w * 0.75:
+        elif x < w * 0.65:
             fade = (x - w * 0.5) / (w * 0.25)
             alpha = int(150 * (1 - fade))
         else:
