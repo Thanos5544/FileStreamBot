@@ -475,44 +475,7 @@ async def movie_handler(client, message):
     except Exception as e:
         await msg.edit_text(f"❌ <b>Error</b>\n\n<code>{str(e)[:400]}</code>")
 
-
-@Client.on_callback_query(cb_starts("mvcolor|"), group=-999)
-async def color_cb(client, query):
-    try:
-        _, token, color = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if not data:
-            return await query.answer("Expired!", show_alert=True)
-        if query.from_user.id != data["user_id"]:
-            return await query.answer("Not for you!", show_alert=True)
-        
-        # AGAR NORMAL CLICK KIYA, TO COLOR HATA DO
-        if color == "normal":
-            data["selected_color"] = None
-        else:
-            data["selected_color"] = color
-            
-        await query.answer(f"Applied {color}")
-        
-        settings = get_user_settings(query.from_user.id)
-        poster = await create_poster(
-            data["images"][data["current_index"]],
-            data["movie_data"],
-            color_name=data.get("selected_color"),
-            channel=None # Yahan None kar do taki branding na aaye
-        )
-        caption = format_caption(data["movie_data"], settings)
-        
-        await query.message.edit_media(
-            media=InputMediaPhoto(media=poster, caption=caption, parse_mode=ParseMode.HTML),
-            reply_markup=build_control_buttons(token, data["current_index"], len(data["images"]))
-        )
-    except Exception as e:
-        print(f"Color: {e}")
-    finally:
-        raise StopPropagation
-        
-
+ 
 @Client.on_callback_query(cb_starts("mvcolor|"), group=-999)
 async def color_cb(client, query):
     try:
