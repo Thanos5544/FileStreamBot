@@ -165,7 +165,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     top = (nh - target[1]) // 2
     img = img.crop((left, top, left + target[0], top + target[1]))
     
-    dark = create_dark_overlay(target, opacity=60)
+    dark = create_dark_overlay(target, opacity=18)
     img = Image.alpha_composite(img, dark)
     
     if color_name and color_name in COLORS:
