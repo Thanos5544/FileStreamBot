@@ -125,11 +125,11 @@ def create_left_dark_gradient(size):
     w, h = size
     
     for x in range(w):
-        if x < w * 0.5:
-            alpha = 200 # Thoda dark
-        elif x < w * 0.75:
-            fade = (x - w * 0.5) / (w * 0.25)
-            alpha = int(200 * (1 - fade))
+        if x < w * 0.35:
+            alpha = 180 # Thoda dark
+        elif x < w * 0.65:
+            fade = (x - w * 0.35) / (w * 0.30)
+            alpha = int(180 * (1 - fade))
         else:
             alpha = 0
         # Yahan (0, 0, 0) kar diya hai, jisse blue tint hat gaya
@@ -137,7 +137,7 @@ def create_left_dark_gradient(size):
     return g
 
 
-def create_dark_overlay(size, opacity=60):
+def create_dark_overlay(size, opacity=30):
     return Image.new("RGBA", size, (0, 0, 0, opacity))
 
 
