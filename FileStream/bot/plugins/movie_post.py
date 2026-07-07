@@ -213,7 +213,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     if director:
         ff = get_font(13, bold=True)
         dc = COLORS[color_name] if color_name and color_name in COLORS else (46, 204, 113)
-        draw.text((30, 220), "FILMED BY", font=ff, fill=(255, 255, 255, 200))
+        draw.text((30, 220), "FILMED BY", font=ff, fill=(195,195,195,255))
         b = draw.textbbox((0, 0), "FILMED BY", font=ff)
         fw = b[2] - b[0]
         draw.text((30 + fw + 10, 220), director[:30], font=ff, fill=dc)
@@ -227,7 +227,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         ts = 65
     
     ft = get_font(ts, bold=True)
-    draw.text((30, 255), tu, font=ft, fill=(255, 255, 255, 255))
+    draw.text((30, 255), tu, font=ft, fill=(195,195,195,255))
     
     lc = COLORS[color_name] if color_name and color_name in COLORS else (46, 204, 113)
     tb = draw.textbbox((30, 255), tu, font=ft)
@@ -243,7 +243,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
         it += f"  •  {duration}"
     
     iy = ly + 20
-    draw.text((30, iy), it, font=fi, fill=(220, 220, 220, 255))
+    draw.text((30, iy), it, font=fi, fill=(195,195,195,255))
     
     if overview:
         fs = get_font(13)
