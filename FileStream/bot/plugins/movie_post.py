@@ -95,12 +95,10 @@ def apply_postify_gradient(size, color_name):
     draw = ImageDraw.Draw(overlay)
     
     if color_name == "normal" or color_name not in COLORS:
-        # Light black gradient for "USE NORMAL" look
         for x in range(int(w * 0.5)):
             alpha = int(160 * (1 - x / (w * 0.5)))
             draw.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha))
     else:
-        # Color Tinted Black Gradient (Postify style)
         rgb = COLORS[color_name]
         tint_color = (int(rgb[0]*0.4), int(rgb[1]*0.4), int(rgb[2]*0.4))
         for x in range(int(w * 0.5)):
@@ -111,17 +109,13 @@ def apply_postify_gradient(size, color_name):
 async def create_poster(image_url, movie_data, color_name=None, channel=None):
     img_bytes = await download_image(image_url)
     img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-    
-    # Professional fit to avoid face cropping
     img = ImageOps.fit(img, (1280, 720), method=Image.LANCZOS)
     
-    # Postify Color Tuning
     img = ImageEnhance.Contrast(img).enhance(1.2)
     img = ImageEnhance.Color(img).enhance(1.3)
     img = ImageEnhance.Sharpness(img).enhance(1.5)
     img = ImageEnhance.Brightness(img).enhance(1.05)
     
-    # Left-side only gradient
     gradient = apply_postify_gradient((1280, 720), color_name)
     img = Image.alpha_composite(img, gradient)
     
@@ -174,7 +168,6 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
             draw.text((40, oy), line, font=f_ov, fill=(180, 180, 180, 200))
             oy += 25
 
-    # Buttons
     btn_color = (74, 0, 224, 255) if color_name == "normal" else (COLORS.get(color_name, (74, 0, 224)) + (255,))
     draw.rounded_rectangle([(40, 600), (220, 650)], radius=12, fill=btn_color)
     f_btn = get_font(18, bold=True)
@@ -193,9 +186,8 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     final.save(out, format="JPEG", quality=95)
     out.seek(0)
     return out
-    
-    
-    def format_caption(movie_data, settings):
+
+def format_caption(movie_data, settings):
     title = movie_data.get("title") or movie_data.get("name") or "Unknown"
     date = movie_data.get("release_date") or movie_data.get("first_air_date") or ""
     year = date[:4] if date else "N/A"
