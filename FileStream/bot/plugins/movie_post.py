@@ -107,8 +107,8 @@ def create_left_color_gradient(size, color_rgb):
     r, gr, b = color_rgb
     
     for x in range(w):
-        if x < w * 0.5:
-            alpha = 200
+        if x < w * 0.45:
+            alpha = 150
         elif x < w * 0.7:
             fade = (x - w * 0.5) / (w * 0.2)
             alpha = int(200 * (1 - fade))
@@ -125,8 +125,8 @@ def create_left_dark_gradient(size):
     w, h = size
     
     for x in range(w):
-        if x < w * 0.5:
-            alpha = 200 # Thoda dark
+        if x < w * 0.45:
+            alpha = 150
         elif x < w * 0.75:
             fade = (x - w * 0.5) / (w * 0.25)
             alpha = int(200 * (1 - fade))
