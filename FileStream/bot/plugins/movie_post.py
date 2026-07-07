@@ -273,7 +273,7 @@ async def create_poster(image_url, movie_data, color_name=None, channel=None):
     bw = 200
     bh = 50
     
-    bc = COLORS[color_name] if color_name and color_name in COLORS else (52, 152, 219)
+    bc = COLORS[color_name] if color_name and color_name in COLORS else (37, 99, 235)
     
     draw.rounded_rectangle([(30, by), (30 + bw, by + bh)], radius=8, fill=bc)
     
