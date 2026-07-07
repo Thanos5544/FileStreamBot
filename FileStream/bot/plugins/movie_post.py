@@ -111,7 +111,7 @@ def create_left_color_gradient(size, color_rgb):
             alpha = 150
         elif x < w * 0.65:
             fade = (x - w * 0.45) / (w * 0.20)
-            alpha = int(200 * (1 - fade))
+            alpha = int(150 * (1 - fade))
         else:
             alpha = 0
         d.line([(x, 0), (x, h)], fill=(r, gr, b, alpha))
@@ -129,7 +129,7 @@ def create_left_dark_gradient(size):
             alpha = 150
         elif x < w * 0.75:
             fade = (x - w * 0.5) / (w * 0.25)
-            alpha = int(200 * (1 - fade))
+            alpha = int(150 * (1 - fade))
         else:
             alpha = 0
         # Yahan (0, 0, 0) kar diya hai, jisse blue tint hat gaya
