@@ -3,7 +3,6 @@ import re
 import json
 import time
 import uuid
-import asyncio
 import aiohttp
 from io import BytesIO
 from pathlib import Path
@@ -16,9 +15,8 @@ from pyrogram.types import (
     InlineKeyboardButton,
     InputMediaPhoto
 )
-from pyrogram.enums import ChatType
 
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
 # ================== CONFIG ==================
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
@@ -35,7 +33,6 @@ POST_CACHE = {}
 USER_STATE = {}
 CACHE_TIME = 1800
 
-# 8 Colours (emoji → RGB)
 COLOURS = {
     "🔴": (220, 38, 38),
     "🟠": (234, 88, 12),
@@ -43,8 +40,8 @@ COLOURS = {
     "🟢": (22, 163, 74),
     "🔵": (37, 99, 235),
     "🟣": (147, 51, 234),
-    "⚫": (30, 30, 30),
-    "⚪": (240, 240, 240),
+    "⚫": (24, 24, 24),
+    "⚪": (245, 245, 245),
 }
 
 DEFAULT_SETTINGS = {
@@ -65,7 +62,6 @@ DEFAULT_SETTINGS = {
 }
 
 
-# ================== HELPERS ==================
 def load_settings():
     if SETTINGS_FILE.exists():
         try:
@@ -147,7 +143,6 @@ def get_year(item):
     return date[:4] if len(date) >= 4 else "N/A"
 
 
-# ================== TMDB ==================
 async def search_tmdb(session, query):
     async with session.get(
         f"{TMDB_BASE}/search/multi",
@@ -184,7 +179,6 @@ def select_best(results, year=None):
     return filtered[0]
 
 
-# ================== IMAGE GENERATOR (Pillow) ==================
 async def download_image(session, url):
     try:
         async with session.get(url) as resp:
@@ -196,91 +190,149 @@ async def download_image(session, url):
     return None
 
 
-def create_gradient_overlay(size, color, opacity=160):
-    w, h = size
-    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    for x in range(w // 2 + 100):
-        alpha = int(opacity * (1 - x / (w // 2 + 100)))
-        draw.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha))
-    for y in range(h // 3):
-        alpha = int(80 * (y / (h // 3)))
-        draw.line([(0, h - y), (w, h - y)], fill=(0, 0, 0, alpha))
-    return overlay
-
-
-def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
-    W, H = 1280, 720
-    img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.75)
-    img = img.convert("RGBA")
-
-    overlay = create_gradient_overlay((W, H), accent, 190)
-    img = Image.alpha_composite(img, overlay)
-
-    draw = ImageDraw.Draw(img)
-
-    f_title = get_font(54, bold=True)
-    f_meta = get_font(26, semi=True)
-    f_small = get_font(22)
-    f_tiny = get_font(18)
-
-    title = info.get("title", "Unknown")
-    year = info.get("year", "")
-    rating = info.get("rating", "N/A")
-    genres = info.get("genres", "")
-    media_type = info.get("media_type", "movie")
-
-    draw.rectangle([0, 0, 12, H], fill=accent + (255,))
-
-    y = 80
-    title_lines = []
-    words = title.upper().split()
+def wrap_text(text, font, max_width, draw):
+    words = text.split()
+    lines = []
     line = ""
     for w in words:
         test = (line + " " + w).strip()
-        if draw.textlength(test, font=f_title) < 620:
+        if draw.textlength(test, font=font) <= max_width:
             line = test
         else:
             if line:
-                title_lines.append(line)
+                lines.append(line)
             line = w
     if line:
-        title_lines.append(line)
+        lines.append(line)
+    return lines
 
-    for i, ln in enumerate(title_lines[:3]):
-        draw.text((50, y + i * 60), ln, font=f_title, fill=(255, 255, 255, 255))
 
-    y += len(title_lines) * 60 + 15
+def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
+    """
+    Premium design like screenshot
+    NO branding, NO username, NO channel name
+    """
+    W, H = 1280, 720
 
-    type_text = "TV SERIES" if media_type == "tv" else "MOVIE"
-    draw.text((50, y), f"{year}  •  {type_text}", font=f_meta, fill=(200, 200, 200, 255))
-    y += 50
+    # base
+    img = base_img.copy().resize((W, H), Image.LANCZOS)
+    img = ImageEnhance.Brightness(img).enhance(0.62)
+    img = ImageEnhance.Contrast(img).enhance(1.1)
+    img = img.convert("RGBA")
 
-    draw.rectangle([50, y, 280, y + 5], fill=accent + (255,))
+    # dark left gradient
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
+    for x in range(0, 780):
+        alpha = int(210 * (1 - x / 780))
+        odraw.line([(x, 0), (x, H)], fill=(0, 0, 0, alpha))
+    for y in range(0, 180):
+        alpha = int(90 * (1 - y / 180))
+        odraw.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+    for y in range(H - 160, H):
+        alpha = int(100 * ((y - (H - 160)) / 160))
+        odraw.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+
+    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(img)
+
+    # fonts
+    f_title = get_font(72, bold=True)
+    f_meta = get_font(24, semi=True)
+    f_story = get_font(22)
+    f_btn = get_font(22, bold=True)
+    f_small = get_font(20, semi=True)
+
+    title = info.get("title", "Unknown").upper()
+    year = info.get("year", "")
+    rating = info.get("rating", "N/A")
+    genres = info.get("genres", "")
+    status = info.get("status", "")
+    story = info.get("story", "")
+    media_type = info.get("media_type", "movie")
+
+    # left accent bar
+    draw.rectangle([0, 0, 10, H], fill=accent + (255,))
+
+    # TITLE
+    y = 150
+    title_lines = wrap_text(title, f_title, 620, draw)[:2]
+    for i, ln in enumerate(title_lines):
+        draw.text((55, y + i * 78), ln, font=f_title, fill=(255, 255, 255, 255))
+    y += len(title_lines) * 78 + 12
+
+    # accent underline
+    draw.rectangle([55, y, 55 + 140, y + 7], fill=accent + (255,))
     y += 35
 
-    badge_w, badge_h = 160, 42
-    draw.rounded_rectangle([50, y, 50 + badge_w, y + badge_h], radius=8, fill=accent + (255,))
-    draw.text((50 + 18, y + 8), f"★  {rating} IMDb", font=f_small, fill=(255, 255, 255, 255))
-    y += 70
-
+    # meta line: 2024 • DRAMA & ACTION • RETURNING
+    meta_parts = [year]
     if genres:
-        draw.text((50, y), genres.upper()[:60], font=f_tiny, fill=(180, 180, 180, 255))
+        meta_parts.append(genres.upper())
+    if media_type == "tv" and status and status != "—":
+        meta_parts.append(status.upper())
+    meta = "  •  ".join([p for p in meta_parts if p])
+    draw.text((55, y), meta[:70], font=f_meta, fill=(210, 210, 210, 255))
+    y += 50
 
-    draw.rectangle([0, H - 8, W, H], fill=accent + (255,))
+    # story
+    if story:
+        story_lines = wrap_text(story, f_story, 600, draw)[:4]
+        for i, ln in enumerate(story_lines):
+            draw.text((55, y + i * 30), ln, font=f_story, fill=(190, 190, 190, 255))
+        y += len(story_lines) * 30 + 40
+    else:
+        y += 30
+
+    # ===== BUTTONS ON IMAGE =====
+    # WATCH NOW
+    btn1_x, btn1_y = 55, y
+    btn1_w, btn1_h = 210, 52
+    draw.rounded_rectangle(
+        [btn1_x, btn1_y, btn1_x + btn1_w, btn1_y + btn1_h],
+        radius=10,
+        fill=accent + (255,)
+    )
+    draw.text((btn1_x + 28, btn1_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+
+    # IMDb badge
+    btn2_x = btn1_x + btn1_w + 18
+    btn2_w, btn2_h = 170, 52
+    draw.rounded_rectangle(
+        [btn2_x, btn1_y, btn2_x + btn2_w, btn1_y + btn2_h],
+        radius=10,
+        fill=(15, 15, 15, 230)
+    )
+    # border
+    draw.rounded_rectangle(
+        [btn2_x, btn1_y, btn2_x + btn2_w, btn1_y + btn2_h],
+        radius=10,
+        outline=(255, 255, 255, 40),
+        width=2
+    )
+    draw.text((btn2_x + 28, btn1_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
     final = img.convert("RGB")
     bio = BytesIO()
-    final.save(bio, format="JPEG", quality=92)
+    final.save(bio, format="JPEG", quality=93)
     bio.seek(0)
+    bio.name = "poster.jpg"
     return bio
 
 
-# ================== CAPTION ==================
+def make_clean_image(base_img: Image.Image):
+    """Original clean image (no design)"""
+    W, H = 1280, 720
+    img = base_img.copy().resize((W, H), Image.LANCZOS)
+    bio = BytesIO()
+    img.save(bio, format="JPEG", quality=93)
+    bio.seek(0)
+    bio.name = "clean.jpg"
+    return bio
+
+
 def build_caption(info: dict, settings: dict):
     template = settings.get("caption_template", DEFAULT_SETTINGS["caption_template"])
-
     data = {
         "title": info.get("title", "Unknown"),
         "year": info.get("year", "N/A"),
@@ -292,7 +344,6 @@ def build_caption(info: dict, settings: dict):
         "genres": info.get("genres", "—"),
         "story": info.get("story", "No overview available."),
     }
-
     caption = template.format(**data)
 
     if info.get("media_type") == "movie":
@@ -302,21 +353,18 @@ def build_caption(info: dict, settings: dict):
                 continue
             lines.append(line)
         caption = "\n".join(lines)
-
     return caption.strip()
 
 
-def build_post_keyboard(token, page, total, current_color="🟢"):
+def build_post_keyboard(token, page, total, current_color="🟢", clean_mode=False):
     colours = list(COLOURS.keys())
-    color_row = []
+    color_btns = []
     for c in colours:
-        text = f"•{c}•" if c == current_color else c
-        color_row.append(
-            InlineKeyboardButton(text, callback_data=f"postcol|{token}|{c}")
-        )
+        mark = f"•{c}•" if c == current_color else c
+        color_btns.append(InlineKeyboardButton(mark, callback_data=f"postcol|{token}|{c}"))
 
-    row1 = color_row[:4]
-    row2 = color_row[4:]
+    row1 = color_btns[:4]
+    row2 = color_btns[4:]
 
     nav = []
     if page > 0:
@@ -325,25 +373,28 @@ def build_post_keyboard(token, page, total, current_color="🟢"):
     if page < total - 1:
         nav.append(InlineKeyboardButton("NEXT ➡️", callback_data=f"postpage|{token}|{page+1}"))
 
-    buttons = [row1, row2, nav]
+    action_row = [
+        InlineKeyboardButton("🖼 CLEAN" if not clean_mode else "🎨 DESIGN", callback_data=f"postclean|{token}"),
+        InlineKeyboardButton("✅ USE THIS", callback_data=f"postuse|{token}"),
+    ]
 
-    buttons.append([
+    buttons = [row1, row2, nav, action_row, [
         InlineKeyboardButton("🗑 CLEAR", callback_data=f"postclear|{token}")
-    ])
-
+    ]]
     return InlineKeyboardMarkup(buttons)
 
 
 def build_url_buttons(settings):
     raw = settings.get("buttons", [])
-    if not raw:
-        return None
     rows = []
     for b in raw:
         if isinstance(b, dict) and b.get("text") and b.get("url"):
             rows.append([InlineKeyboardButton(b["text"], url=b["url"])])
-    return InlineKeyboardMarkup(rows) if rows else None
-  # ================== COMMAND /post ==================
+    if not rows:
+        rows = [[InlineKeyboardButton("No buttons in settings", callback_data="postnoop")]]
+    rows.append([InlineKeyboardButton("🔙 Back to Editor", callback_data="postbackedit")])
+    return InlineKeyboardMarkup(rows)
+    # ================== /post COMMAND ==================
 @Client.on_message(filters.command("post") & filters.private)
 async def post_cmd(client: Client, message: Message):
     cleanup_cache()
@@ -398,7 +449,7 @@ async def post_cmd(client: Client, message: Message):
             if not posters:
                 return await msg.edit_text("❌ Images nahi mile.")
 
-            genres = ", ".join([g["name"] for g in details.get("genres", [])][:4]) or "—"
+            genres = ", ".join([g["name"] for g in details.get("genres", [])][:3]) or "—"
             rating = details.get("vote_average")
             rating = f"{rating:.1f}" if rating else "N/A"
 
@@ -411,8 +462,8 @@ async def post_cmd(client: Client, message: Message):
                 episodes = "—"
 
             story = (details.get("overview") or "No overview available.").strip()
-            if len(story) > 280:
-                story = story[:277] + "..."
+            if len(story) > 260:
+                story = story[:257] + "..."
 
             info = {
                 "title": get_title(details),
@@ -430,36 +481,69 @@ async def post_cmd(client: Client, message: Message):
                 return await msg.edit_text("❌ Poster download fail.")
 
             settings = load_settings()
-            accent = COLOURS["🟢"]
-            photo = generate_poster(base, info, accent)
+            photo = generate_poster(base, info, COLOURS["🔴"])
             caption = build_caption(info, settings)
 
             token = uuid.uuid4().hex[:12]
             POST_CACHE[token] = {
                 "user_id": message.from_user.id,
                 "chat_id": message.chat.id,
+                "message_id": None,
                 "info": info,
                 "posters": posters,
                 "page": 0,
-                "color": "🟢",
+                "color": "🔴",
+                "clean_mode": False,
                 "base_images": {0: base},
                 "time": time.time(),
                 "settings": settings,
             }
 
-            kb = build_post_keyboard(token, 0, len(posters), "🟢")
+            kb = build_post_keyboard(token, 0, len(posters), "🔴", False)
 
             await msg.delete()
-            await client.send_photo(
+            sent = await client.send_photo(
                 chat_id=message.chat.id,
                 photo=photo,
                 caption=caption,
                 reply_markup=kb
             )
+            POST_CACHE[token]["message_id"] = sent.id
 
     except Exception as e:
         print("POST ERROR:", e)
         await msg.edit_text(f"❌ Error:\n`{str(e)[:800]}`")
+
+
+async def render_and_edit(client, query, data, token):
+    """common render"""
+    page = data["page"]
+    color = data["color"]
+    posters = data["posters"]
+    clean_mode = data.get("clean_mode", False)
+
+    if page not in data["base_images"]:
+        async with aiohttp.ClientSession() as session:
+            img = await download_image(session, posters[page])
+            if not img:
+                await query.answer("Image load fail", show_alert=True)
+                return
+            data["base_images"][page] = img
+
+    base = data["base_images"][page]
+
+    if clean_mode:
+        photo = make_clean_image(base)
+    else:
+        photo = generate_poster(base, data["info"], COLOURS[color])
+
+    caption = build_caption(data["info"], data["settings"])
+    kb = build_post_keyboard(token, page, len(posters), color, clean_mode)
+
+    await query.message.edit_media(
+        media=InputMediaPhoto(photo, caption=caption),
+        reply_markup=kb
+    )
 
 
 # ================== CALLBACKS ==================
@@ -469,36 +553,14 @@ async def post_color(client: Client, query: CallbackQuery):
         _, token, color = query.data.split("|")
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            await query.answer("Expired / not yours", show_alert=True)
-            return
-
+            return await query.answer("Expired / not yours", show_alert=True)
         if color not in COLOURS:
-            await query.answer("Invalid colour")
-            return
+            return await query.answer("Invalid")
 
         data["color"] = color
-        page = data["page"]
-        posters = data["posters"]
-
-        if page not in data["base_images"]:
-            async with aiohttp.ClientSession() as session:
-                img = await download_image(session, posters[page])
-                if not img:
-                    await query.answer("Image load fail", show_alert=True)
-                    return
-                data["base_images"][page] = img
-        base = data["base_images"][page]
-
-        photo = generate_poster(base, data["info"], COLOURS[color])
-        caption = build_caption(data["info"], data["settings"])
-        kb = build_post_keyboard(token, page, len(posters), color)
-
-        await query.message.edit_media(
-            media=InputMediaPhoto(photo, caption=caption),
-            reply_markup=kb
-        )
+        data["clean_mode"] = False
+        await render_and_edit(client, query, data, token)
         await query.answer(f"Colour {color}")
-
     except Exception as e:
         print("COLOR ERR:", e)
         await query.answer("Error", show_alert=True)
@@ -513,38 +575,53 @@ async def post_page(client: Client, query: CallbackQuery):
         page = int(page_s)
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            await query.answer("Expired / not yours", show_alert=True)
-            return
+            return await query.answer("Expired / not yours", show_alert=True)
 
-        posters = data["posters"]
-        if page < 0 or page >= len(posters):
-            await query.answer("No more")
-            return
+        if page < 0 or page >= len(data["posters"]):
+            return await query.answer("No more")
 
         data["page"] = page
-        color = data["color"]
-
-        if page not in data["base_images"]:
-            async with aiohttp.ClientSession() as session:
-                img = await download_image(session, posters[page])
-                if not img:
-                    await query.answer("Image load fail", show_alert=True)
-                    return
-                data["base_images"][page] = img
-
-        base = data["base_images"][page]
-        photo = generate_poster(base, data["info"], COLOURS[color])
-        caption = build_caption(data["info"], data["settings"])
-        kb = build_post_keyboard(token, page, len(posters), color)
-
-        await query.message.edit_media(
-            media=InputMediaPhoto(photo, caption=caption),
-            reply_markup=kb
-        )
+        await render_and_edit(client, query, data, token)
         await query.answer(f"Page {page+1}")
-
     except Exception as e:
         print("PAGE ERR:", e)
+        await query.answer("Error", show_alert=True)
+    finally:
+        raise StopPropagation
+
+
+@Client.on_callback_query(cb_starts("postclean|"), group=-900)
+async def post_clean(client: Client, query: CallbackQuery):
+    try:
+        _, token = query.data.split("|")
+        data = POST_CACHE.get(token)
+        if not data or query.from_user.id != data["user_id"]:
+            return await query.answer("Expired / not yours", show_alert=True)
+
+        data["clean_mode"] = not data.get("clean_mode", False)
+        await render_and_edit(client, query, data, token)
+        await query.answer("Clean" if data["clean_mode"] else "Design")
+    except Exception as e:
+        print("CLEAN ERR:", e)
+        await query.answer("Error", show_alert=True)
+    finally:
+        raise StopPropagation
+
+
+@Client.on_callback_query(cb_starts("postuse|"), group=-900)
+async def post_use(client: Client, query: CallbackQuery):
+    try:
+        _, token = query.data.split("|")
+        data = POST_CACHE.get(token)
+        if not data or query.from_user.id != data["user_id"]:
+            return await query.answer("Expired / not yours", show_alert=True)
+
+        # final image keep + settings buttons lagao
+        kb = build_url_buttons(data["settings"])
+        await query.message.edit_reply_markup(reply_markup=kb)
+        await query.answer("✅ Buttons applied")
+    except Exception as e:
+        print("USE ERR:", e)
         await query.answer("Error", show_alert=True)
     finally:
         raise StopPropagation
@@ -556,12 +633,14 @@ async def post_clear(client: Client, query: CallbackQuery):
         _, token = query.data.split("|")
         data = POST_CACHE.get(token)
         if data and query.from_user.id != data["user_id"]:
-            await query.answer("Not yours", show_alert=True)
-            return
+            return await query.answer("Not yours", show_alert=True)
 
         POST_CACHE.pop(token, None)
-        await query.message.edit_caption("❌ Cleared.")
-        await query.message.edit_reply_markup(reply_markup=None)
+        try:
+            await query.message.edit_caption("❌ Cleared.")
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         await query.answer("Cleared")
     finally:
         raise StopPropagation
@@ -570,6 +649,13 @@ async def post_clear(client: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex(r"^postnoop$"), group=-900)
 async def post_noop(_, query: CallbackQuery):
     await query.answer()
+    raise StopPropagation
+
+
+@Client.on_callback_query(filters.regex(r"^postbackedit$"), group=-900)
+async def post_back_edit(client: Client, query: CallbackQuery):
+    # simple info
+    await query.answer("Dobara /post se naya banao", show_alert=True)
     raise StopPropagation
 
 
@@ -582,9 +668,8 @@ async def settings_cmd(client: Client, message: Message):
         f"🎧 **Audio:** `{s.get('audio')}`\n"
         f"📺 **Pixels:** `{s.get('pixels')}`\n"
         f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`\n\n"
-        f"**Caption Template:**\n```\n{s.get('caption_template')[:400]}...\n```"
+        f"**Caption Template:**\n```\n{s.get('caption_template')[:380]}\n```"
     )
-
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📝 CAPTION", callback_data="set_caption"),
@@ -594,9 +679,7 @@ async def settings_cmd(client: Client, message: Message):
             InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
             InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
         ],
-        [
-            InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset"),
-        ]
+        [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")]
     ])
     await message.reply_text(text, reply_markup=kb)
 
@@ -604,42 +687,32 @@ async def settings_cmd(client: Client, message: Message):
 @Client.on_callback_query(cb_starts("set_"), group=-901)
 async def settings_cb(client: Client, query: CallbackQuery):
     action = query.data
-
     if action == "set_caption":
         USER_STATE[query.from_user.id] = "wait_caption"
         await query.message.reply_text(
-            "📝 Naya **caption template** bhej de.\n\n"
+            "📝 Naya **caption template** bhej.\n\n"
             "Placeholders:\n"
             "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n\n"
-            "Cancel ke liye /cancel"
+            "/cancel se cancel"
         )
-        await query.answer()
-
     elif action == "set_audio":
         USER_STATE[query.from_user.id] = "wait_audio"
-        await query.message.reply_text("🎧 Naya default **Audio** bhej (example: Hindi / English / Dual)\n\n/cancel")
-        await query.answer()
-
+        await query.message.reply_text("🎧 Naya Audio bhej (Hindi / English / Dual)\n\n/cancel")
     elif action == "set_pixels":
         USER_STATE[query.from_user.id] = "wait_pixels"
-        await query.message.reply_text("📺 Naya **Pixels** bhej (example: 480p | 720p | 1080p)\n\n/cancel")
-        await query.answer()
-
+        await query.message.reply_text("📺 Naya Pixels bhej\nExample: `480p | 720p | 1080p`\n\n/cancel")
     elif action == "set_buttons":
         USER_STATE[query.from_user.id] = "wait_buttons"
         await query.message.reply_text(
-            "🔘 Buttons set karne ke liye is format me bhej:\n\n"
-            "`Button Text - https://link.com`\n"
-            "`Another Button - https://t.me/...`\n\n"
+            "🔘 Format:\n`Button Text - https://link.com`\n"
             "Har line pe ek button.\n"
-            "Clear karne ke liye sirf `clear` likh ke bhej.\n\n/cancel"
+            "Clear ke liye: `clear`\n\n/cancel"
         )
-        await query.answer()
-
     elif action == "set_reset":
         save_settings(DEFAULT_SETTINGS.copy())
         await query.answer("Reset done ✅", show_alert=True)
-        await query.message.edit_text("✅ Settings reset to default.\n\nDobara /settings kar.")
+        await query.message.edit_text("✅ Reset ho gaya. Dobara /settings kar.")
+    await query.answer()
     raise StopPropagation
 
 
@@ -651,7 +724,6 @@ async def settings_input(client: Client, message: Message):
         return
 
     text = message.text.strip()
-
     if text.lower() == "/cancel":
         USER_STATE.pop(uid, None)
         return await message.reply_text("❌ Cancelled.")
@@ -662,20 +734,17 @@ async def settings_input(client: Client, message: Message):
         s["caption_template"] = text
         save_settings(s)
         USER_STATE.pop(uid, None)
-        await message.reply_text("✅ Caption template save ho gaya!")
-
+        await message.reply_text("✅ Caption save!")
     elif state == "wait_audio":
         s["audio"] = text
         save_settings(s)
         USER_STATE.pop(uid, None)
-        await message.reply_text(f"✅ Audio set: `{text}`")
-
+        await message.reply_text(f"✅ Audio: `{text}`")
     elif state == "wait_pixels":
         s["pixels"] = text
         save_settings(s)
         USER_STATE.pop(uid, None)
-        await message.reply_text(f"✅ Pixels set: `{text}`")
-
+        await message.reply_text(f"✅ Pixels: `{text}`")
     elif state == "wait_buttons":
         if text.lower() == "clear":
             s["buttons"] = []
@@ -684,15 +753,15 @@ async def settings_input(client: Client, message: Message):
             for line in text.splitlines():
                 if " - " in line:
                     parts = line.split(" - ", 1)
-                    if len(parts) == 2 and parts[1].startswith("http"):
+                    if len(parts) == 2 and parts[1].strip().startswith("http"):
                         buttons.append({"text": parts[0].strip(), "url": parts[1].strip()})
             s["buttons"] = buttons
         save_settings(s)
         USER_STATE.pop(uid, None)
-        await message.reply_text(f"✅ {len(s['buttons'])} buttons save ho gaye!")
+        await message.reply_text(f"✅ {len(s['buttons'])} buttons save!")
 
 
 @Client.on_message(filters.command("cancel") & filters.private)
 async def cancel_state(_, message: Message):
     USER_STATE.pop(message.from_user.id, None)
-    await message.reply_text("✅ State cleared.")
+    await message.reply_text("✅ Cleared.")
