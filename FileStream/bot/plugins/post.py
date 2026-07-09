@@ -389,7 +389,8 @@ def build_url_buttons(settings):
     if not rows:
         rows = [[InlineKeyboardButton("No buttons in /settings", callback_data="postnoop")]]
     rows.append([InlineKeyboardButton("🗑 CLEAR", callback_data="postclear|final")])
-    return InlineKeyboardMarkup(rows)
+        return InlineKeyboardMarkup(rows)
+    # ================== /post COMMAND ==================
 @Client.on_message(filters.command("post") & filters.private)
 async def post_cmd(client: Client, message: Message):
     cleanup_cache()
