@@ -15,8 +15,7 @@ from pyrogram.types import (
     InlineKeyboardButton,
     InputMediaPhoto
 )
-
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
 TMDB_BASE = "https://api.themoviedb.org/3"
@@ -106,7 +105,7 @@ def ensure_fonts():
                 import urllib.request
                 urllib.request.urlretrieve(url, path)
             except Exception as e:
-                print(f"Font download failed {name}: {e}")
+                print("Font download failed", name, e)
 
 
 def get_font(size, bold=False, semi=False):
@@ -208,38 +207,32 @@ def wrap_text(text, font, max_width, draw):
 
 def generate_poster(base_img, info, accent):
     W, H = 1280, 720
-
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.58)
-    img = ImageEnhance.Contrast(img).enhance(1.25)
-    img = ImageEnhance.Color(img).enhance(1.05)
+    img = ImageEnhance.Brightness(img).enhance(0.60)
+    img = ImageEnhance.Contrast(img).enhance(1.20)
     img = img.convert("RGBA")
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     ar, ag, ab = accent
 
-    for x in range(0, 860):
-        p = (1.0 - (x / 860.0)) ** 0.58
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(255 * p)))
-        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(42 * p)))
+    for x in range(0, 800):
+        p = (1.0 - (x / 800.0)) ** 0.65
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(240 * p)))
+        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(40 * p)))
 
-    for x in range(0, 55):
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, 120))
-
-    for y in range(0, 90):
-        a = int(40 * (1 - y / 90))
+    for y in range(0, 100):
+        a = int(50 * (1 - y / 100))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
-    for y in range(H - 140, H):
-        a = int(70 * ((y - (H - 140)) / 140))
+    for y in range(H - 150, H):
+        a = int(70 * ((y - (H - 150)) / 150))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    f_title = get_font(92, bold=True)
-    f_ghost = get_font(110, bold=True)
+    f_title = get_font(86, bold=True)
     f_meta = get_font(22, semi=True)
     f_story = get_font(21)
     f_btn = get_font(22, bold=True)
@@ -252,33 +245,27 @@ def generate_poster(base_img, info, accent):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    left = 72
-    y = 145
+    left = 70
+    y = 150
 
-    ghost_lines = wrap_text(title, f_ghost, 780, draw)[:2]
-    for i, line in enumerate(ghost_lines):
-        draw.text((left + 10, y - 14 + i * 100), line, font=f_ghost, fill=(255, 255, 255, 22))
-
-    title_lines = wrap_text(title, f_title, 690, draw)[:2]
+    title_lines = wrap_text(title, f_title, 680, draw)[:2]
     for i, line in enumerate(title_lines):
-        ty = y + i * 94
-        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 150))
+        ty = y + i * 90
+        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 140))
         draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 245))
-    y += len(title_lines) * 94 + 8
+    y += len(title_lines) * 90 + 10
 
-    draw.rectangle([left, y, left + 142, y + 6], fill=accent + (255,))
-    y += 30
+    draw.rectangle([left, y, left + 150, y + 6], fill=accent + (255,))
+    y += 32
 
     meta_parts = []
     if year:
         meta_parts.append(str(year))
     if genres:
-        g = genres.upper().replace("ACTION & ADVENTURE", "ACTION").replace("ACTION AND ADVENTURE", "ACTION")
+        g = genres.upper()
         parts = [p.strip() for p in g.split(",")]
         if len(parts) >= 2:
             g = f"{parts[0]} & {parts[1]}"
-        elif parts:
-            g = parts[0]
         meta_parts.append(g)
     if media_type == "tv" and status and status not in ["—", ""]:
         st = status.upper()
@@ -286,33 +273,46 @@ def generate_poster(base_img, info, accent):
             st = "RETURNING"
         meta_parts.append(st)
     meta = "  •  ".join(meta_parts)
-    draw.text((left, y), meta[:78], font=f_meta, fill=(200, 200, 200, 235))
-    y += 42
+    draw.text((left, y), meta[:78], font=f_meta, fill=(200, 200, 200, 230))
+    y += 45
 
     if story:
-        story_lines = wrap_text(story, f_story, 500, draw)[:4]
+        story_lines = wrap_text(story, f_story, 520, draw)[:4]
         for i, line in enumerate(story_lines):
-            draw.text((left, y + i * 28), line, font=f_story, fill=(190, 190, 190, 165))
-        y += len(story_lines) * 28 + 38
+            draw.text((left, y + i * 28), line, font=f_story, fill=(185, 185, 185, 170))
+        y += len(story_lines) * 28 + 40
     else:
-        y += 32
+        y += 30
 
     btn_h = 52
-    btn_y = min(y, H - 105)
+    btn_y = min(y, H - 110)
 
-    watch_w = 214
-    draw.rounded_rectangle([left, btn_y, left + watch_w, btn_y + btn_h], radius=12, fill=accent + (255,))
-    draw.text((left + 22, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+    watch_w = 220
+    draw.rounded_rectangle(
+        [left, btn_y, left + watch_w, btn_y + btn_h],
+        radius=12,
+        fill=accent + (255,)
+    )
+    draw.text((left + 24, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    imdb_x = left + watch_w + 12
-    imdb_w = 164
-    draw.rounded_rectangle([imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h], radius=12, fill=(0, 0, 0, 230))
-    draw.rounded_rectangle([imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h], radius=12, outline=(255, 255, 255, 70), width=2)
-    draw.text((imdb_x + 20, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
+    imdb_x = left + watch_w + 14
+    imdb_w = 170
+    draw.rounded_rectangle(
+        [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
+        radius=12,
+        fill=(0, 0, 0, 230)
+    )
+    draw.rounded_rectangle(
+        [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
+        radius=12,
+        outline=(255, 255, 255, 70),
+        width=2
+    )
+    draw.text((imdb_x + 22, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
     final = img.convert("RGB")
     bio = BytesIO()
-    final.save(bio, format="JPEG", quality=96)
+    final.save(bio, format="JPEG", quality=95)
     bio.seek(0)
     bio.name = "poster.jpg"
     return bio
@@ -343,7 +343,11 @@ def build_caption(info, settings):
     }
     caption = template.format(**data)
     if info.get("media_type") == "movie":
-        lines = [ln for ln in caption.splitlines() if "Status:" not in ln and "Episodes:" not in ln]
+        lines = []
+        for line in caption.splitlines():
+            if "Status:" in line or "Episodes:" in line:
+                continue
+            lines.append(line)
         caption = "\n".join(lines)
     return caption.strip()
 
@@ -370,7 +374,9 @@ def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=Fal
         InlineKeyboardButton("✅ USE THIS", callback_data=f"postuse|{token}"),
     ]
 
-    buttons = [row1, row2, nav, action_row, [InlineKeyboardButton("🗑 CLEAR", callback_data=f"postclear|{token}")]]
+    buttons = [row1, row2, nav, action_row, [
+        InlineKeyboardButton("🗑 CLEAR", callback_data=f"postclear|{token}")
+    ]]
     return InlineKeyboardMarkup(buttons)
 
 
@@ -384,14 +390,13 @@ def build_url_buttons(settings):
         rows = [[InlineKeyboardButton("No buttons in /settings", callback_data="postnoop")]]
     rows.append([InlineKeyboardButton("🗑 CLEAR", callback_data="postclear|final")])
     return InlineKeyboardMarkup(rows)
-  @Client.on_message(filters.command("post") & filters.private)
+@Client.on_message(filters.command("post") & filters.private)
 async def post_cmd(client: Client, message: Message):
     cleanup_cache()
-
     if len(message.command) < 2:
         return await message.reply_text(
             "❌ Use:\n`/post movie or series name`\n\n"
-            "Example:\n`/post the witcher`\n`/post pathaan 2023`"
+            "Example:\n`/post the witcher`"
         )
 
     query = " ".join(message.command[1:]).strip()
@@ -416,7 +421,6 @@ async def post_cmd(client: Client, message: Message):
 
             media_type = item["media_type"]
             media_id = item["id"]
-
             details = await get_details(session, media_type, media_id)
             images_data = await get_images(session, media_type, media_id)
 
@@ -488,7 +492,6 @@ async def post_cmd(client: Client, message: Message):
             }
 
             kb = build_post_keyboard(token, 0, len(posters), "🟣", False)
-
             await msg.delete()
             await client.send_photo(
                 chat_id=message.chat.id,
@@ -496,7 +499,6 @@ async def post_cmd(client: Client, message: Message):
                 caption=caption,
                 reply_markup=kb
             )
-
     except Exception as e:
         print("POST ERROR:", e)
         await msg.edit_text(f"❌ Error:\n`{str(e)[:800]}`")
@@ -524,7 +526,6 @@ async def render_and_edit(client, query, data, token):
 
     caption = build_caption(data["info"], data["settings"])
     kb = build_post_keyboard(token, page, len(posters), color, clean_mode)
-
     await query.message.edit_media(
         media=InputMediaPhoto(photo, caption=caption),
         reply_markup=kb
@@ -638,8 +639,7 @@ async def settings_cmd(client: Client, message: Message):
         "⚙️ **POST SETTINGS**\n\n"
         f"🎧 **Audio:** `{s.get('audio')}`\n"
         f"📺 **Pixels:** `{s.get('pixels')}`\n"
-        f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`\n\n"
-        f"**Caption Template:**\n```\n{s.get('caption_template')[:380]}\n```"
+        f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`"
     )
     kb = InlineKeyboardMarkup([
         [
@@ -661,27 +661,26 @@ async def settings_cb(client: Client, query: CallbackQuery):
     if action == "set_caption":
         USER_STATE[query.from_user.id] = "wait_caption"
         await query.message.reply_text(
-            "📝 Naya **caption template** bhej.\n\n"
-            "Placeholders:\n"
-            "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n\n"
-            "/cancel se cancel"
+            "📝 Caption template bhej.\n"
+            "Placeholders: `{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
+            "/cancel"
         )
     elif action == "set_audio":
         USER_STATE[query.from_user.id] = "wait_audio"
-        await query.message.reply_text("🎧 Naya Audio bhej (Hindi / English / Dual)\n\n/cancel")
+        await query.message.reply_text("🎧 Audio bhej\n/cancel")
     elif action == "set_pixels":
         USER_STATE[query.from_user.id] = "wait_pixels"
-        await query.message.reply_text("📺 Naya Pixels bhej\nExample: `480p | 720p | 1080p`\n\n/cancel")
+        await query.message.reply_text("📺 Pixels bhej\nExample: 480p | 720p | 1080p\n/cancel")
     elif action == "set_buttons":
         USER_STATE[query.from_user.id] = "wait_buttons"
         await query.message.reply_text(
             "🔘 Format:\n`Button Text - https://link.com`\n"
-            "Har line pe ek button.\nClear ke liye: `clear`\n\n/cancel"
+            "Clear: `clear`\n/cancel"
         )
     elif action == "set_reset":
         save_settings(DEFAULT_SETTINGS.copy())
         await query.answer("Reset done ✅", show_alert=True)
-        await query.message.edit_text("✅ Reset ho gaya. Dobara /settings kar.")
+        await query.message.edit_text("✅ Reset done. /settings dobara kar.")
     await query.answer()
     raise StopPropagation
 
@@ -699,7 +698,6 @@ async def settings_input(client: Client, message: Message):
         return await message.reply_text("❌ Cancelled.")
 
     s = load_settings()
-
     if state == "wait_caption":
         s["caption_template"] = text
         save_settings(s)
