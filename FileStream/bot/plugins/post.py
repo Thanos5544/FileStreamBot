@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 import aiohttp
+import urllib.request
 from io import BytesIO
 from pathlib import Path
 
@@ -24,6 +25,7 @@ TMDB_IMG = "https://image.tmdb.org/t/p/original"
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 SETTINGS_FILE = DATA_DIR / "post_settings.json"
+
 FONT_DIR = Path("fonts")
 FONT_DIR.mkdir(exist_ok=True)
 
@@ -57,6 +59,22 @@ DEFAULT_SETTINGS = {
  ➥ Genres: {genres}
 ╰───────────────────
 ≡ {story}"""
+}
+
+# Multiple sources so fonts almost always download
+FONT_FILES = {
+    "Montserrat-Bold.ttf": [
+        "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf",
+        "https://cdn.jsdelivr.net/gh/JulietaUla/Montserrat@master/fonts/ttf/Montserrat-Bold.ttf",
+    ],
+    "Montserrat-SemiBold.ttf": [
+        "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-SemiBold.ttf",
+        "https://cdn.jsdelivr.net/gh/JulietaUla/Montserrat@master/fonts/ttf/Montserrat-SemiBold.ttf",
+    ],
+    "Montserrat-Regular.ttf": [
+        "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Regular.ttf",
+        "https://cdn.jsdelivr.net/gh/JulietaUla/Montserrat@master/fonts/ttf/Montserrat-Regular.ttf",
+    ],
 }
 
 
@@ -93,31 +111,39 @@ def cb_starts(prefix: str):
 
 
 def ensure_fonts():
-    fonts = {
-        "Montserrat-Bold.ttf": "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf",
-        "Montserrat-Regular.ttf": "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Regular.ttf",
-        "Montserrat-SemiBold.ttf": "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-SemiBold.ttf",
-    }
-    for name, url in fonts.items():
+    """Download fonts into /fonts if missing"""
+    for name, urls in FONT_FILES.items():
         path = FONT_DIR / name
-        if not path.exists():
+        if path.exists() and path.stat().st_size > 10000:
+            continue
+        for url in urls:
             try:
-                import urllib.request
+                print(f"Downloading font: {name}")
                 urllib.request.urlretrieve(url, path)
+                if path.exists() and path.stat().st_size > 10000:
+                    print(f"Font ready: {name}")
+                    break
             except Exception as e:
-                print("Font download failed", name, e)
+                print(f"Font fail {name} from {url}: {e}")
 
 
 def get_font(size, bold=False, semi=False):
     ensure_fonts()
     try:
         if bold:
-            return ImageFont.truetype(str(FONT_DIR / "Montserrat-Bold.ttf"), size)
+            p = FONT_DIR / "Montserrat-Bold.ttf"
+            if p.exists():
+                return ImageFont.truetype(str(p), size)
         if semi:
-            return ImageFont.truetype(str(FONT_DIR / "Montserrat-SemiBold.ttf"), size)
-        return ImageFont.truetype(str(FONT_DIR / "Montserrat-Regular.ttf"), size)
-    except Exception:
-        return ImageFont.load_default()
+            p = FONT_DIR / "Montserrat-SemiBold.ttf"
+            if p.exists():
+                return ImageFont.truetype(str(p), size)
+        p = FONT_DIR / "Montserrat-Regular.ttf"
+        if p.exists():
+            return ImageFont.truetype(str(p), size)
+    except Exception as e:
+        print("get_font error:", e)
+    return ImageFont.load_default()
 
 
 def tmdb_img_url(path):
@@ -208,7 +234,6 @@ def wrap_text(text, font, max_width, draw):
 def generate_poster(base_img, info, accent):
     W, H = 1280, 720
 
-    # darker cinematic base
     img = base_img.copy().resize((W, H), Image.LANCZOS)
     img = ImageEnhance.Brightness(img).enhance(0.52)
     img = ImageEnhance.Contrast(img).enhance(1.28)
@@ -219,16 +244,15 @@ def generate_poster(base_img, info, accent):
     od = ImageDraw.Draw(overlay)
     ar, ag, ab = accent
 
-    # left dark + soft accent wash (darker like nova)
     for x in range(0, 780):
         p = (1.0 - (x / 780.0)) ** 0.60
         od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(250 * p)))
         od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(28 * p)))
 
-    # top / bottom soft dark
     for y in range(0, 90):
         a = int(45 * (1 - y / 90))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
+
     for y in range(H - 140, H):
         a = int(70 * ((y - (H - 140)) / 140))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
@@ -236,10 +260,9 @@ def generate_poster(base_img, info, accent):
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # LEFT FULL COLOUR LINE (selected colour)
+    # left full colour line
     draw.rectangle([0, 0, 10, H], fill=accent + (255,))
 
-    # fonts (title thoda chhota)
     f_title = get_font(76, bold=True)
     f_meta = get_font(21, semi=True)
     f_story = get_font(19)
@@ -256,19 +279,17 @@ def generate_poster(base_img, info, accent):
     left = 72
     y = 155
 
-    # TITLE (thoda chhota)
     title_lines = wrap_text(title, f_title, 650, draw)[:2]
     for i, line in enumerate(title_lines):
         ty = y + i * 82
-        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 150))
-        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 245))
-    y += len(title_lines) * 82 + 10
+        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 90))
+        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 250))
+    y += len(title_lines) * 82 + 14
 
-    # underline
+    # underline below title
     draw.rectangle([left, y, left + 140, y + 6], fill=accent + (255,))
-    y += 30
+    y += 34
 
-    # meta
     meta_parts = []
     if year:
         meta_parts.append(str(year))
@@ -287,7 +308,6 @@ def generate_poster(base_img, info, accent):
     draw.text((left, y), meta[:76], font=f_meta, fill=(195, 195, 195, 230))
     y += 42
 
-    # story (thodi chhoti + soft)
     if story:
         story_lines = wrap_text(story, f_story, 500, draw)[:4]
         for i, line in enumerate(story_lines):
@@ -296,11 +316,9 @@ def generate_poster(base_img, info, accent):
     else:
         y += 30
 
-    # buttons
     btn_h = 50
     btn_y = min(y, H - 105)
 
-    # WATCH NOW
     watch_w = 210
     draw.rounded_rectangle(
         [left, btn_y, left + watch_w, btn_y + btn_h],
@@ -309,7 +327,6 @@ def generate_poster(base_img, info, accent):
     )
     draw.text((left + 22, btn_y + 12), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    # IMDb (★ hata diya)
     imdb_x = left + watch_w + 12
     imdb_w = 155
     draw.rounded_rectangle(
@@ -405,14 +422,16 @@ def build_url_buttons(settings):
         rows = [[InlineKeyboardButton("No buttons in /settings", callback_data="postnoop")]]
     rows.append([InlineKeyboardButton("🗑 CLEAR", callback_data="postclear|final")])
     return InlineKeyboardMarkup(rows)
-    # ================== /post ==================
+
 @Client.on_message(filters.command("post") & filters.private)
 async def post_cmd(client: Client, message: Message):
     cleanup_cache()
+    ensure_fonts()
+
     if len(message.command) < 2:
         return await message.reply_text(
             "❌ Use:\n`/post movie or series name`\n\n"
-            "Example:\n`/post the witcher`"
+            "Example:\n`/post the witcher`\n`/post pathaan 2023`"
         )
 
     query = " ".join(message.command[1:]).strip()
@@ -437,23 +456,26 @@ async def post_cmd(client: Client, message: Message):
 
             media_type = item["media_type"]
             media_id = item["id"]
+
             details = await get_details(session, media_type, media_id)
             images_data = await get_images(session, media_type, media_id)
 
+            # ONLY landscape backdrops (no vertical poster stretch)
             posters = []
             if details.get("backdrop_path"):
                 posters.append(tmdb_img_url(details["backdrop_path"]))
-            if details.get("poster_path"):
-                posters.append(tmdb_img_url(details["poster_path"]))
 
-            for p in images_data.get("backdrops", [])[:12]:
+            for p in images_data.get("backdrops", [])[:20]:
+                w = p.get("width") or 0
+                h = p.get("height") or 0
+                if w and h and w < h:
+                    continue
                 url = tmdb_img_url(p.get("file_path"))
                 if url and url not in posters:
                     posters.append(url)
-            for p in images_data.get("posters", [])[:8]:
-                url = tmdb_img_url(p.get("file_path"))
-                if url and url not in posters:
-                    posters.append(url)
+
+            if not posters and details.get("poster_path"):
+                posters.append(tmdb_img_url(details["poster_path"]))
 
             if not posters:
                 return await msg.edit_text("❌ Images nahi mile.")
@@ -564,8 +586,6 @@ async def post_color(client: Client, query: CallbackQuery):
     except Exception as e:
         print("COLOR ERR:", e)
         await query.answer("Error", show_alert=True)
-    finally:
-        raise StopPropagation
 
 
 @Client.on_callback_query(cb_starts("postpage|"), group=-900)
@@ -584,8 +604,6 @@ async def post_page(client: Client, query: CallbackQuery):
     except Exception as e:
         print("PAGE ERR:", e)
         await query.answer("Error", show_alert=True)
-    finally:
-        raise StopPropagation
 
 
 @Client.on_callback_query(cb_starts("postclean|"), group=-900)
@@ -601,8 +619,6 @@ async def post_clean(client: Client, query: CallbackQuery):
     except Exception as e:
         print("CLEAN ERR:", e)
         await query.answer("Error", show_alert=True)
-    finally:
-        raise StopPropagation
 
 
 @Client.on_callback_query(cb_starts("postuse|"), group=-900)
@@ -618,8 +634,6 @@ async def post_use(client: Client, query: CallbackQuery):
     except Exception as e:
         print("USE ERR:", e)
         await query.answer("Error", show_alert=True)
-    finally:
-        raise StopPropagation
 
 
 @Client.on_callback_query(cb_starts("postclear|"), group=-900)
@@ -638,14 +652,13 @@ async def post_clear(client: Client, query: CallbackQuery):
         except Exception:
             pass
         await query.answer("Cleared")
-    finally:
-        raise StopPropagation
+    except Exception as e:
+        print("CLEAR ERR:", e)
 
 
 @Client.on_callback_query(filters.regex(r"^postnoop$"), group=-900)
 async def post_noop(_, query: CallbackQuery):
     await query.answer()
-    raise StopPropagation
 
 
 @Client.on_message(filters.command("settings") & filters.private)
@@ -678,7 +691,8 @@ async def settings_cb(client: Client, query: CallbackQuery):
         USER_STATE[query.from_user.id] = "wait_caption"
         await query.message.reply_text(
             "📝 Caption template bhej.\n"
-            "Placeholders: `{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
+            "Placeholders:\n"
+            "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
             "/cancel"
         )
     elif action == "set_audio":
@@ -698,22 +712,21 @@ async def settings_cb(client: Client, query: CallbackQuery):
         await query.answer("Reset done ✅", show_alert=True)
         await query.message.edit_text("✅ Reset done. /settings dobara kar.")
     await query.answer()
-    raise StopPropagation
 
 
-@Client.on_message(filters.private & filters.text & ~filters.command(["post", "settings", "cancel", "img"]))
+@Client.on_message(filters.private & filters.text, group=50)
 async def settings_input(client: Client, message: Message):
-    uid = message.from_user.id
+    uid = message.from_user.id if message.from_user else 0
     state = USER_STATE.get(uid)
     if not state:
         return
 
-    text = message.text.strip()
-    if text.lower() == "/cancel":
-        USER_STATE.pop(uid, None)
-        return await message.reply_text("❌ Cancelled.")
+    if message.text and message.text.startswith("/"):
+        return
 
+    text = message.text.strip()
     s = load_settings()
+
     if state == "wait_caption":
         s["caption_template"] = text
         save_settings(s)
