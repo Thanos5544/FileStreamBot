@@ -37,7 +37,7 @@ COLOURS = {
     "🔴": (220, 38, 38),
     "🟠": (234, 88, 12),
     "🟡": (234, 179, 8),
-    "🟢": (22, 163, 74),
+    "🟢": (16, 185, 129),
     "🔵": (37, 99, 235),
     "🟣": (147, 51, 234),
     "⚫": (24, 24, 24),
@@ -208,33 +208,45 @@ def wrap_text(text, font, max_width, draw):
 
 
 def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
-    """Exact style like screenshots - NO branding"""
+    """
+    NOVA-style layout (NO branding)
+    - left dark panel + accent colour wash
+    - big title
+    - solid WATCH NOW + black IMDb badge
+    """
     W, H = 1280, 720
 
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.68)
-    img = ImageEnhance.Contrast(img).enhance(1.08)
+    img = ImageEnhance.Brightness(img).enhance(0.70)
+    img = ImageEnhance.Contrast(img).enhance(1.15)
+    img = ImageEnhance.Color(img).enhance(1.08)
     img = img.convert("RGBA")
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
+    ar, ag, ab = accent
 
-    for x in range(0, 750):
-        alpha = int(225 * (1 - x / 750) ** 0.9)
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, alpha))
+    # LEFT DARK PANEL + ACCENT WASH
+    for x in range(0, 780):
+        p = 1 - (x / 780.0)
+        p = p ** 0.75
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(245 * p)))
+        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(48 * p)))
 
-    for y in range(0, 140):
-        alpha = int(70 * (1 - y / 140))
-        od.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+    # top soft
+    for y in range(0, 130):
+        a = int(55 * (1 - y / 130))
+        od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
-    for y in range(H - 180, H):
-        alpha = int(90 * ((y - (H - 180)) / 180))
-        od.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+    # bottom soft
+    for y in range(H - 190, H):
+        a = int(85 * ((y - (H - 190)) / 190))
+        od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    f_title = get_font(78, bold=True)
+    f_title = get_font(88, bold=True)
     f_meta = get_font(23, semi=True)
     f_story = get_font(23)
     f_btn = get_font(23, bold=True)
@@ -247,65 +259,77 @@ def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    left = 60
-    y = 145
+    left = 72
+    y = 155
 
-    title_lines = wrap_text(title, f_title, 640, draw)[:2]
+    # TITLE
+    title_lines = wrap_text(title, f_title, 700, draw)[:2]
     for i, line in enumerate(title_lines):
-        draw.text((left, y + i * 82), line, font=f_title, fill=(255, 255, 255, 255))
-    y += len(title_lines) * 82 + 8
+        ty = y + i * 92
+        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 120))
+        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 255))
+    y += len(title_lines) * 92 + 10
 
-    draw.rectangle([left, y, left + 155, y + 7], fill=accent + (255,))
-    y += 32
+    # UNDERLINE
+    draw.rectangle([left, y, left + 150, y + 7], fill=accent + (255,))
+    y += 36
 
+    # META
     meta_parts = []
     if year:
         meta_parts.append(str(year))
     if genres:
         meta_parts.append(genres.upper())
     if media_type == "tv" and status and status not in ["—", ""]:
-        meta_parts.append(status.upper())
+        st = status.upper()
+        if "RETURNING" in st:
+            st = "RETURNING"
+        meta_parts.append(st)
     meta = "  •  ".join(meta_parts)
-    draw.text((left, y), meta[:75], font=f_meta, fill=(200, 200, 200, 255))
+    draw.text((left, y), meta[:80], font=f_meta, fill=(205, 205, 205, 255))
     y += 48
 
+    # STORY
     if story:
         story_lines = wrap_text(story, f_story, 620, draw)[:4]
         for i, line in enumerate(story_lines):
-            draw.text((left, y + i * 31), line, font=f_story, fill=(185, 185, 185, 255))
-        y += len(story_lines) * 31 + 45
+            draw.text((left, y + i * 32), line, font=f_story, fill=(190, 190, 190, 255))
+        y += len(story_lines) * 32 + 46
     else:
-        y += 35
+        y += 40
 
+    # BUTTONS
     btn_h = 54
-    btn_y = y
+    btn_y = min(y, H - 115)
 
-    watch_w = 225
+    # WATCH NOW
+    watch_w = 230
     draw.rounded_rectangle(
         [left, btn_y, left + watch_w, btn_y + btn_h],
         radius=12,
         fill=accent + (255,)
     )
-    draw.text((left + 22, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((left + 26, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    imdb_x = left + watch_w + 16
+    # IMDb solid black
+    imdb_x = left + watch_w + 14
     imdb_w = 175
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
         radius=12,
-        fill=(12, 12, 12, 240)
+        fill=(8, 8, 8, 250)
     )
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
         radius=12,
-        outline=(255, 255, 255, 45),
+        outline=(255, 255, 255, 55),
         width=2
     )
-    draw.text((imdb_x + 26, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((imdb_x + 24, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
     final = img.convert("RGB")
     bio = BytesIO()
-    final.save(bio, format="JPEG", quality=94)
+    final.save(bio, format="JPEG", quality=95)
     bio.seek(0)
     bio.name = "poster.jpg"
     return bio
@@ -315,7 +339,7 @@ def make_clean_image(base_img: Image.Image):
     W, H = 1280, 720
     img = base_img.copy().resize((W, H), Image.LANCZOS)
     bio = BytesIO()
-    img.save(bio, format="JPEG", quality=94)
+    img.save(bio, format="JPEG", quality=95)
     bio.seek(0)
     bio.name = "clean.jpg"
     return bio
@@ -346,7 +370,7 @@ def build_caption(info: dict, settings: dict):
     return caption.strip()
 
 
-def build_post_keyboard(token, page, total, current_color="🔴", clean_mode=False):
+def build_post_keyboard(token, page, total, current_color="🟢", clean_mode=False):
     colours = list(COLOURS.keys())
     color_btns = []
     for c in colours:
@@ -384,7 +408,7 @@ def build_url_buttons(settings):
         rows = [[InlineKeyboardButton("No buttons in /settings", callback_data="postnoop")]]
     rows.append([InlineKeyboardButton("🗑 CLEAR", callback_data="postclear|final")])
     return InlineKeyboardMarkup(rows)
-    # ================== /post COMMAND ==================
+    # ================== /post ==================
 @Client.on_message(filters.command("post") & filters.private)
 async def post_cmd(client: Client, message: Message):
     cleanup_cache()
@@ -471,7 +495,7 @@ async def post_cmd(client: Client, message: Message):
                 return await msg.edit_text("❌ Poster download fail.")
 
             settings = load_settings()
-            photo = generate_poster(base, info, COLOURS["🔴"])
+            photo = generate_poster(base, info, COLOURS["🟢"])
             caption = build_caption(info, settings)
 
             token = uuid.uuid4().hex[:12]
@@ -481,14 +505,14 @@ async def post_cmd(client: Client, message: Message):
                 "info": info,
                 "posters": posters,
                 "page": 0,
-                "color": "🔴",
+                "color": "🟢",
                 "clean_mode": False,
                 "base_images": {0: base},
                 "time": time.time(),
                 "settings": settings,
             }
 
-            kb = build_post_keyboard(token, 0, len(posters), "🔴", False)
+            kb = build_post_keyboard(token, 0, len(posters), "🟢", False)
 
             await msg.delete()
             await client.send_photo(
