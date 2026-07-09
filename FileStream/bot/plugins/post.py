@@ -18,7 +18,6 @@ from pyrogram.types import (
 
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
-# ================== CONFIG ==================
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/original"
@@ -209,61 +208,57 @@ def wrap_text(text, font, max_width, draw):
 
 def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     """
-    Premium OTT / NovaFlix style banner
-    - cinematic dark grade
-    - left black → deep purple smooth gradient
-    - huge soft title
+    Near NOVA style (NO branding)
+    - seamless left dark → purple gradient (NO purple card)
+    - huge soft title + ghost title
     - thin accent underline
-    - story limited left
-    - no branding
+    - story left only, low opacity
+    - ★ IMDb black glass
+    - purple only on underline + WATCH NOW
     """
     W, H = 1280, 720
 
-    # ===== BASE + CINEMATIC GRADE =====
+    # base cinematic grade
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.62)
-    img = ImageEnhance.Contrast(img).enhance(1.22)
-    img = ImageEnhance.Color(img).enhance(1.06)
-    img = img.filter(ImageFilter.GaussianBlur(radius=0.4))
+    img = ImageEnhance.Brightness(img).enhance(0.58)
+    img = ImageEnhance.Contrast(img).enhance(1.25)
+    img = ImageEnhance.Color(img).enhance(1.05)
     img = img.convert("RGBA")
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     ar, ag, ab = accent
 
-    # ===== LEFT SMOOTH BLACK → DEEP PURPLE GRADIENT =====
-    # heavy dark left panel that fades right
-    for x in range(0, 820):
-        p = 1.0 - (x / 820.0)
-        p = p ** 0.62
+    # LEFT seamless black → deep purple (NO box/card)
+    for x in range(0, 860):
+        p = 1.0 - (x / 860.0)
+        p = max(0.0, p) ** 0.58
 
-        # deep black base
-        black_a = int(250 * p)
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, black_a))
+        # black body
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(255 * p)))
 
-        # deep purple/accent wash (smooth)
-        purple_a = int(55 * p)
-        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, purple_a))
+        # soft purple wash
+        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(42 * p)))
 
-    # extra solid dark on extreme left edge
-    for x in range(0, 70):
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, 110))
+    # extreme left solid
+    for x in range(0, 55):
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, 120))
 
-    # top cinematic fade
-    for y in range(0, 100):
-        a = int(45 * (1 - y / 100))
+    # top fade
+    for y in range(0, 90):
+        a = int(40 * (1 - y / 90))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
-    # bottom cinematic fade
-    for y in range(H - 150, H):
-        a = int(75 * ((y - (H - 150)) / 150))
+    # bottom fade
+    for y in range(H - 140, H):
+        a = int(70 * ((y - (H - 140)) / 140))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # ===== FONTS =====
-    f_title = get_font(94, bold=True)
+    f_title = get_font(92, bold=True)
+    f_ghost = get_font(110, bold=True)
     f_meta = get_font(22, semi=True)
     f_story = get_font(21)
     f_btn = get_font(22, bold=True)
@@ -276,91 +271,90 @@ def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    left = 68
-    y = 148
+    left = 72
+    y = 145
 
-    # ===== HUGE SOFT TITLE (slightly transparent premium feel) =====
-    title_lines = wrap_text(title, f_title, 700, draw)[:2]
+    # GHOST TITLE (depth like NOVA)
+    ghost_lines = wrap_text(title, f_ghost, 780, draw)[:2]
+    for i, line in enumerate(ghost_lines):
+        draw.text(
+            (left + 10, y - 14 + i * 100),
+            line,
+            font=f_ghost,
+            fill=(255, 255, 255, 22)
+        )
+
+    # MAIN TITLE (soft white, NO hard stroke)
+    title_lines = wrap_text(title, f_title, 690, draw)[:2]
     for i, line in enumerate(title_lines):
-        ty = y + i * 96
-        # soft shadow
-        draw.text((left + 3, ty + 3), line, font=f_title, fill=(0, 0, 0, 140))
-        # main soft white
-        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 235))
-    y += len(title_lines) * 96 + 10
+        ty = y + i * 94
+        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 150))
+        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 245))
+    y += len(title_lines) * 94 + 8
 
-    # ===== THIN PURPLE UNDERLINE =====
-    draw.rectangle([left, y, left + 148, y + 6], fill=accent + (255,))
-    y += 32
+    # thin accent underline
+    draw.rectangle([left, y, left + 142, y + 6], fill=accent + (255,))
+    y += 30
 
-    # ===== YEAR • GENRES • STATUS =====
+    # meta
     meta_parts = []
     if year:
         meta_parts.append(str(year))
     if genres:
-        g = genres.upper()
-        # keep clean & short like reference
-        g = g.replace("ACTION & ADVENTURE", "ACTION").replace("ACTION AND ADVENTURE", "ACTION")
+        g = genres.upper().replace("ACTION & ADVENTURE", "ACTION").replace("ACTION AND ADVENTURE", "ACTION")
         parts = [p.strip() for p in g.split(",")]
-        if len(parts) > 2:
+        if len(parts) >= 2:
             g = f"{parts[0]} & {parts[1]}"
+        elif parts:
+            g = parts[0]
         meta_parts.append(g)
     if media_type == "tv" and status and status not in ["—", ""]:
         st = status.upper()
         if "RETURNING" in st:
             st = "RETURNING"
         meta_parts.append(st)
-
     meta = "  •  ".join(meta_parts)
-    draw.text((left, y), meta[:76], font=f_meta, fill=(200, 200, 200, 230))
-    y += 44
+    draw.text((left, y), meta[:78], font=f_meta, fill=(200, 200, 200, 235))
+    y += 42
 
-    # ===== STORY (only 3-4 lines, left limited, light gray low opacity) =====
+    # story left-only, low opacity
     if story:
-        story_lines = wrap_text(story, f_story, 520, draw)[:4]
+        story_lines = wrap_text(story, f_story, 500, draw)[:4]
         for i, line in enumerate(story_lines):
-            draw.text(
-                (left, y + i * 29),
-                line,
-                font=f_story,
-                fill=(185, 185, 185, 175)   # light gray + lower opacity
-            )
-        y += len(story_lines) * 29 + 40
+            draw.text((left, y + i * 28), line, font=f_story, fill=(190, 190, 190, 165))
+        y += len(story_lines) * 28 + 38
     else:
-        y += 34
+        y += 32
 
-    # ===== BUTTONS =====
+    # buttons
     btn_h = 52
-    btn_y = min(y, H - 108)
+    btn_y = min(y, H - 105)
 
-    # WATCH NOW (accent purple only here)
-    watch_w = 218
+    # WATCH NOW
+    watch_w = 214
     draw.rounded_rectangle(
         [left, btn_y, left + watch_w, btn_y + btn_h],
         radius=12,
         fill=accent + (255,)
     )
-    draw.text((left + 24, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((left + 22, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    # IMDb BLACK GLASS
-    imdb_x = left + watch_w + 14
-    imdb_w = 168
-    # glass black
+    # IMDb black glass + ★
+    imdb_x = left + watch_w + 12
+    imdb_w = 164
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
         radius=12,
-        fill=(0, 0, 0, 210)
+        fill=(0, 0, 0, 230)
     )
-    # thin glass border
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
         radius=12,
-        outline=(255, 255, 255, 65),
+        outline=(255, 255, 255, 70),
         width=2
     )
-    draw.text((imdb_x + 22, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((imdb_x + 20, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
-    # final
     final = img.convert("RGB")
     bio = BytesIO()
     final.save(bio, format="JPEG", quality=96)
@@ -393,13 +387,8 @@ def build_caption(info: dict, settings: dict):
         "story": info.get("story", "No overview available."),
     }
     caption = template.format(**data)
-
     if info.get("media_type") == "movie":
-        lines = []
-        for line in caption.splitlines():
-            if "Status:" in line or "Episodes:" in line:
-                continue
-            lines.append(line)
+        lines = [ln for ln in caption.splitlines() if "Status:" not in ln and "Episodes:" not in ln]
         caption = "\n".join(lines)
     return caption.strip()
 
@@ -442,8 +431,7 @@ def build_url_buttons(settings):
         rows = [[InlineKeyboardButton("No buttons in /settings", callback_data="postnoop")]]
     rows.append([InlineKeyboardButton("🗑 CLEAR", callback_data="postclear|final")])
     return InlineKeyboardMarkup(rows)
-    # ================== /post ==================
-@Client.on_message(filters.command("post") & filters.private)
+    @Client.on_message(filters.command("post") & filters.private)
 async def post_cmd(client: Client, message: Message):
     cleanup_cache()
 
@@ -510,8 +498,8 @@ async def post_cmd(client: Client, message: Message):
                 episodes = "—"
 
             story = (details.get("overview") or "No overview available.").strip()
-            if len(story) > 240:
-                story = story[:237] + "..."
+            if len(story) > 230:
+                story = story[:227] + "..."
 
             info = {
                 "title": get_title(details),
@@ -576,12 +564,7 @@ async def render_and_edit(client, query, data, token):
             data["base_images"][page] = img
 
     base = data["base_images"][page]
-
-    if clean_mode:
-        photo = make_clean_image(base)
-    else:
-        photo = generate_poster(base, data["info"], COLOURS[color])
-
+    photo = make_clean_image(base) if clean_mode else generate_poster(base, data["info"], COLOURS[color])
     caption = build_caption(data["info"], data["settings"])
     kb = build_post_keyboard(token, page, len(posters), color, clean_mode)
 
@@ -600,7 +583,6 @@ async def post_color(client: Client, query: CallbackQuery):
             return await query.answer("Expired / not yours", show_alert=True)
         if color not in COLOURS:
             return await query.answer("Invalid")
-
         data["color"] = color
         data["clean_mode"] = False
         await render_and_edit(client, query, data, token)
@@ -620,10 +602,8 @@ async def post_page(client: Client, query: CallbackQuery):
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
             return await query.answer("Expired / not yours", show_alert=True)
-
         if page < 0 or page >= len(data["posters"]):
             return await query.answer("No more")
-
         data["page"] = page
         await render_and_edit(client, query, data, token)
         await query.answer(f"Page {page+1}")
@@ -641,7 +621,6 @@ async def post_clean(client: Client, query: CallbackQuery):
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
             return await query.answer("Expired / not yours", show_alert=True)
-
         data["clean_mode"] = not data.get("clean_mode", False)
         await render_and_edit(client, query, data, token)
         await query.answer("Clean" if data["clean_mode"] else "Design")
@@ -659,7 +638,6 @@ async def post_use(client: Client, query: CallbackQuery):
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
             return await query.answer("Expired / not yours", show_alert=True)
-
         kb = build_url_buttons(data["settings"])
         await query.message.edit_reply_markup(reply_markup=kb)
         await query.answer("✅ Buttons applied")
@@ -680,7 +658,6 @@ async def post_clear(client: Client, query: CallbackQuery):
             if data and query.from_user.id != data["user_id"]:
                 return await query.answer("Not yours", show_alert=True)
             POST_CACHE.pop(token, None)
-
         try:
             await query.message.edit_caption("❌ Cleared.")
             await query.message.edit_reply_markup(reply_markup=None)
@@ -697,7 +674,6 @@ async def post_noop(_, query: CallbackQuery):
     raise StopPropagation
 
 
-# ================== /settings ==================
 @Client.on_message(filters.command("settings") & filters.private)
 async def settings_cmd(client: Client, message: Message):
     s = load_settings()
@@ -743,8 +719,7 @@ async def settings_cb(client: Client, query: CallbackQuery):
         USER_STATE[query.from_user.id] = "wait_buttons"
         await query.message.reply_text(
             "🔘 Format:\n`Button Text - https://link.com`\n"
-            "Har line pe ek button.\n"
-            "Clear ke liye: `clear`\n\n/cancel"
+            "Har line pe ek button.\nClear ke liye: `clear`\n\n/cancel"
         )
     elif action == "set_reset":
         save_settings(DEFAULT_SETTINGS.copy())
