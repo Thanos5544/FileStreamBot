@@ -16,7 +16,7 @@ from pyrogram.types import (
     InputMediaPhoto
 )
 
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
 
 # ================== CONFIG ==================
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
@@ -209,58 +209,63 @@ def wrap_text(text, font, max_width, draw):
 
 def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     """
-    Closer to NOVA look (NO branding)
-    - solid dark left panel
-    - soft accent wash
-    - ghost title depth
-    - solid ★ IMDb badge
+    Premium OTT / NovaFlix style banner
+    - cinematic dark grade
+    - left black → deep purple smooth gradient
+    - huge soft title
+    - thin accent underline
+    - story limited left
+    - no branding
     """
     W, H = 1280, 720
 
-    # base image
+    # ===== BASE + CINEMATIC GRADE =====
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.66)
-    img = ImageEnhance.Contrast(img).enhance(1.18)
-    img = ImageEnhance.Color(img).enhance(1.05)
+    img = ImageEnhance.Brightness(img).enhance(0.62)
+    img = ImageEnhance.Contrast(img).enhance(1.22)
+    img = ImageEnhance.Color(img).enhance(1.06)
+    img = img.filter(ImageFilter.GaussianBlur(radius=0.4))
     img = img.convert("RGBA")
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     ar, ag, ab = accent
 
-    # ===== SOLID DARK LEFT PANEL (NOVA jaisa) =====
-    for x in range(0, 720):
-        p = 1 - (x / 720.0)
-        p = p ** 0.55   # stronger dark, kam transparent
+    # ===== LEFT SMOOTH BLACK → DEEP PURPLE GRADIENT =====
+    # heavy dark left panel that fades right
+    for x in range(0, 820):
+        p = 1.0 - (x / 820.0)
+        p = p ** 0.62
 
-        # heavy black
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(255 * p)))
+        # deep black base
+        black_a = int(250 * p)
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, black_a))
 
-        # soft accent wash (kam rakhna)
-        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(28 * p)))
+        # deep purple/accent wash (smooth)
+        purple_a = int(55 * p)
+        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, purple_a))
 
-    # extra dark strip extreme left
-    for x in range(0, 90):
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, 90))
+    # extra solid dark on extreme left edge
+    for x in range(0, 70):
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, 110))
 
-    # top fade
-    for y in range(0, 110):
-        a = int(50 * (1 - y / 110))
+    # top cinematic fade
+    for y in range(0, 100):
+        a = int(45 * (1 - y / 100))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
-    # bottom fade
-    for y in range(H - 160, H):
-        a = int(70 * ((y - (H - 160)) / 160))
+    # bottom cinematic fade
+    for y in range(H - 150, H):
+        a = int(75 * ((y - (H - 150)) / 150))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # fonts
-    f_title = get_font(86, bold=True)
-    f_ghost = get_font(96, bold=True)
+    # ===== FONTS =====
+    f_title = get_font(94, bold=True)
     f_meta = get_font(22, semi=True)
-    f_story = get_font(22)
+    f_story = get_font(21)
     f_btn = get_font(22, bold=True)
 
     title = info.get("title", "Unknown").upper()
@@ -271,94 +276,94 @@ def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    left = 70
-    y = 150
+    left = 68
+    y = 148
 
-    # ===== GHOST TITLE (depth like NOVA) =====
-    ghost_lines = wrap_text(title, f_ghost, 760, draw)[:2]
-    for i, line in enumerate(ghost_lines):
-        draw.text(
-            (left + 18, y - 8 + i * 98),
-            line,
-            font=f_ghost,
-            fill=(255, 255, 255, 28)
-        )
-
-    # ===== MAIN TITLE =====
-    title_lines = wrap_text(title, f_title, 680, draw)[:2]
+    # ===== HUGE SOFT TITLE (slightly transparent premium feel) =====
+    title_lines = wrap_text(title, f_title, 700, draw)[:2]
     for i, line in enumerate(title_lines):
-        ty = y + i * 90
+        ty = y + i * 96
         # soft shadow
-        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 160))
-        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 255))
-    y += len(title_lines) * 90 + 8
+        draw.text((left + 3, ty + 3), line, font=f_title, fill=(0, 0, 0, 140))
+        # main soft white
+        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 235))
+    y += len(title_lines) * 96 + 10
 
-    # ===== UNDERLINE =====
-    draw.rectangle([left, y, left + 145, y + 7], fill=accent + (255,))
-    y += 34
+    # ===== THIN PURPLE UNDERLINE =====
+    draw.rectangle([left, y, left + 148, y + 6], fill=accent + (255,))
+    y += 32
 
-    # ===== META =====
+    # ===== YEAR • GENRES • STATUS =====
     meta_parts = []
     if year:
         meta_parts.append(str(year))
     if genres:
-        # NOVA short style
-        g = genres.upper().replace("ACTION & ADVENTURE", "ACTION").replace("ACTION AND ADVENTURE", "ACTION")
-        # keep short
-        if len(g) > 28:
-            parts = [p.strip() for p in g.split(",")]
-            g = " & ".join(parts[:2]) if len(parts) >= 2 else parts[0]
+        g = genres.upper()
+        # keep clean & short like reference
+        g = g.replace("ACTION & ADVENTURE", "ACTION").replace("ACTION AND ADVENTURE", "ACTION")
+        parts = [p.strip() for p in g.split(",")]
+        if len(parts) > 2:
+            g = f"{parts[0]} & {parts[1]}"
         meta_parts.append(g)
     if media_type == "tv" and status and status not in ["—", ""]:
         st = status.upper()
         if "RETURNING" in st:
             st = "RETURNING"
         meta_parts.append(st)
-    meta = "  •  ".join(meta_parts)
-    draw.text((left, y), meta[:78], font=f_meta, fill=(200, 200, 200, 255))
-    y += 46
 
-    # ===== STORY =====
+    meta = "  •  ".join(meta_parts)
+    draw.text((left, y), meta[:76], font=f_meta, fill=(200, 200, 200, 230))
+    y += 44
+
+    # ===== STORY (only 3-4 lines, left limited, light gray low opacity) =====
     if story:
-        story_lines = wrap_text(story, f_story, 560, draw)[:4]
+        story_lines = wrap_text(story, f_story, 520, draw)[:4]
         for i, line in enumerate(story_lines):
-            draw.text((left, y + i * 30), line, font=f_story, fill=(180, 180, 180, 255))
-        y += len(story_lines) * 30 + 42
+            draw.text(
+                (left, y + i * 29),
+                line,
+                font=f_story,
+                fill=(185, 185, 185, 175)   # light gray + lower opacity
+            )
+        y += len(story_lines) * 29 + 40
     else:
-        y += 36
+        y += 34
 
     # ===== BUTTONS =====
     btn_h = 52
-    btn_y = min(y, H - 110)
+    btn_y = min(y, H - 108)
 
-    # WATCH NOW
-    watch_w = 220
+    # WATCH NOW (accent purple only here)
+    watch_w = 218
     draw.rounded_rectangle(
         [left, btn_y, left + watch_w, btn_y + btn_h],
-        radius=11,
+        radius=12,
         fill=accent + (255,)
     )
     draw.text((left + 24, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    # IMDb - SOLID BLACK + STAR (NOVA style)
+    # IMDb BLACK GLASS
     imdb_x = left + watch_w + 14
     imdb_w = 168
+    # glass black
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
-        radius=11,
-        fill=(0, 0, 0, 255)
+        radius=12,
+        fill=(0, 0, 0, 210)
     )
+    # thin glass border
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
-        radius=11,
-        outline=(255, 255, 255, 70),
+        radius=12,
+        outline=(255, 255, 255, 65),
         width=2
     )
     draw.text((imdb_x + 22, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
+    # final
     final = img.convert("RGB")
     bio = BytesIO()
-    final.save(bio, format="JPEG", quality=95)
+    final.save(bio, format="JPEG", quality=96)
     bio.seek(0)
     bio.name = "poster.jpg"
     return bio
@@ -399,7 +404,7 @@ def build_caption(info: dict, settings: dict):
     return caption.strip()
 
 
-def build_post_keyboard(token, page, total, current_color="🟢", clean_mode=False):
+def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=False):
     colours = list(COLOURS.keys())
     color_btns = []
     for c in colours:
@@ -505,8 +510,8 @@ async def post_cmd(client: Client, message: Message):
                 episodes = "—"
 
             story = (details.get("overview") or "No overview available.").strip()
-            if len(story) > 260:
-                story = story[:257] + "..."
+            if len(story) > 240:
+                story = story[:237] + "..."
 
             info = {
                 "title": get_title(details),
@@ -524,7 +529,7 @@ async def post_cmd(client: Client, message: Message):
                 return await msg.edit_text("❌ Poster download fail.")
 
             settings = load_settings()
-            photo = generate_poster(base, info, COLOURS["🟢"])
+            photo = generate_poster(base, info, COLOURS["🟣"])
             caption = build_caption(info, settings)
 
             token = uuid.uuid4().hex[:12]
@@ -534,14 +539,14 @@ async def post_cmd(client: Client, message: Message):
                 "info": info,
                 "posters": posters,
                 "page": 0,
-                "color": "🟢",
+                "color": "🟣",
                 "clean_mode": False,
                 "base_images": {0: base},
                 "time": time.time(),
                 "settings": settings,
             }
 
-            kb = build_post_keyboard(token, 0, len(posters), "🟢", False)
+            kb = build_post_keyboard(token, 0, len(posters), "🟣", False)
 
             await msg.delete()
             await client.send_photo(
