@@ -3,12 +3,13 @@ import re
 import json
 import time
 import uuid
+import html
 import aiohttp
 import urllib.request
 from io import BytesIO
 from pathlib import Path
 
-from pyrogram import Client, filters, StopPropagation
+from pyrogram import Client, filters
 from pyrogram.types import (
     Message,
     CallbackQuery,
@@ -16,6 +17,7 @@ from pyrogram.types import (
     InlineKeyboardButton,
     InputMediaPhoto
 )
+from pyrogram.enums import ParseMode
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
@@ -25,7 +27,6 @@ TMDB_IMG = "https://image.tmdb.org/t/p/original"
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 SETTINGS_FILE = DATA_DIR / "post_settings.json"
-
 FONT_DIR = Path("fonts")
 FONT_DIR.mkdir(exist_ok=True)
 
@@ -48,6 +49,7 @@ DEFAULT_SETTINGS = {
     "audio": "Hindi",
     "pixels": "480p | 720p | 1080p",
     "buttons": [],
+    "font_style": "normal",
     "caption_template": """{title} ({year})
 ╭───────────────────
  ➥ Status: {status}
@@ -61,7 +63,6 @@ DEFAULT_SETTINGS = {
 ≡ {story}"""
 }
 
-# Multiple sources so fonts almost always download
 FONT_FILES = {
     "Montserrat-Bold.ttf": [
         "https://github.com/JulietaUla/Montserrat/raw/master/fonts/ttf/Montserrat-Bold.ttf",
@@ -76,6 +77,24 @@ FONT_FILES = {
         "https://cdn.jsdelivr.net/gh/JulietaUla/Montserrat@master/fonts/ttf/Montserrat-Regular.ttf",
     ],
 }
+
+SMALL_CAPS = {
+    "a": "ᴀ", "b": "ʙ", "c": "ᴄ", "d": "ᴅ", "e": "ᴇ", "f": "ғ", "g": "ɢ", "h": "ʜ",
+    "i": "ɪ", "j": "ᴊ", "k": "ᴋ", "l": "ʟ", "m": "ᴍ", "n": "ɴ", "o": "ᴏ", "p": "ᴘ",
+    "q": "ǫ", "r": "ʀ", "s": "s", "t": "ᴛ", "u": "ᴜ", "v": "ᴠ", "w": "ᴡ", "x": "x",
+    "y": "ʏ", "z": "ᴢ",
+}
+
+
+def to_small_caps(text: str) -> str:
+    out = []
+    for ch in text:
+        low = ch.lower()
+        if low in SMALL_CAPS and ch.isalpha():
+            out.append(SMALL_CAPS[low])
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def load_settings():
@@ -111,7 +130,6 @@ def cb_starts(prefix: str):
 
 
 def ensure_fonts():
-    """Download fonts into /fonts if missing"""
     for name, urls in FONT_FILES.items():
         path = FONT_DIR / name
         if path.exists() and path.stat().st_size > 10000:
@@ -124,7 +142,7 @@ def ensure_fonts():
                     print(f"Font ready: {name}")
                     break
             except Exception as e:
-                print(f"Font fail {name} from {url}: {e}")
+                print(f"Font fail {name}: {e}")
 
 
 def get_font(size, bold=False, semi=False):
@@ -260,7 +278,6 @@ def generate_poster(base_img, info, accent):
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # left full colour line
     draw.rectangle([0, 0, 10, H], fill=accent + (255,))
 
     f_title = get_font(76, bold=True)
@@ -286,7 +303,6 @@ def generate_poster(base_img, info, accent):
         draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 250))
     y += len(title_lines) * 82 + 14
 
-    # underline below title
     draw.rectangle([left, y, left + 140, y + 6], fill=accent + (255,))
     y += 34
 
@@ -361,8 +377,14 @@ def make_clean_image(base_img):
 
 
 def build_caption(info, settings):
+    """
+    Caption with story in Telegram Quote (blockquote)
+    + optional small caps for whole caption body
+    """
     template = settings.get("caption_template", DEFAULT_SETTINGS["caption_template"])
-    data = {
+    font_style = settings.get("font_style", "normal")
+
+    raw = {
         "title": info.get("title", "Unknown"),
         "year": info.get("year", "N/A"),
         "status": info.get("status", "—"),
@@ -373,14 +395,51 @@ def build_caption(info, settings):
         "genres": info.get("genres", "—"),
         "story": info.get("story", "No overview available."),
     }
-    caption = template.format(**data)
+
+    # build without story first
+    temp = template
+    # replace story placeholder with marker
+    if "{story}" in temp:
+        head = temp.split("{story}")[0]
+        # remove trailing ≡ or similar before story if present
+        head = head.rstrip()
+        if head.endswith("≡"):
+            head = head[:-1].rstrip()
+    else:
+        head = temp
+        raw_story = raw["story"]
+        # no story placeholder
+        caption_plain = temp.format(**raw)
+        if info.get("media_type") == "movie":
+            lines = [ln for ln in caption_plain.splitlines() if "Status:" not in ln and "Episodes:" not in ln]
+            caption_plain = "\n".join(lines)
+        if font_style == "smallcaps":
+            caption_plain = to_small_caps(caption_plain)
+        return html.escape(caption_plain)
+
+    data_esc = {k: html.escape(str(v)) for k, v in raw.items() if k != "story"}
+    # format head with escaped values (story not in head)
+    try:
+        head_fmt = head.format(**{**data_esc, "story": ""})
+    except Exception:
+        head_fmt = head
+
     if info.get("media_type") == "movie":
         lines = []
-        for line in caption.splitlines():
+        for line in head_fmt.splitlines():
             if "Status:" in line or "Episodes:" in line:
                 continue
             lines.append(line)
-        caption = "\n".join(lines)
+        head_fmt = "\n".join(lines).rstrip()
+
+    story = html.escape(str(raw["story"]))
+
+    if font_style == "smallcaps":
+        head_fmt = to_small_caps(head_fmt)
+        story = to_small_caps(story)
+
+    # Telegram quote
+    caption = f"{head_fmt}\n\n<blockquote>{story}</blockquote>"
     return caption.strip()
 
 
@@ -431,7 +490,7 @@ async def post_cmd(client: Client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text(
             "❌ Use:\n`/post movie or series name`\n\n"
-            "Example:\n`/post the witcher`\n`/post pathaan 2023`"
+            "Example:\n`/post the witcher`"
         )
 
     query = " ".join(message.command[1:]).strip()
@@ -460,7 +519,7 @@ async def post_cmd(client: Client, message: Message):
             details = await get_details(session, media_type, media_id)
             images_data = await get_images(session, media_type, media_id)
 
-            # ONLY landscape backdrops (no vertical poster stretch)
+            # landscape only
             posters = []
             if details.get("backdrop_path"):
                 posters.append(tmdb_img_url(details["backdrop_path"]))
@@ -518,7 +577,6 @@ async def post_cmd(client: Client, message: Message):
             token = uuid.uuid4().hex[:12]
             POST_CACHE[token] = {
                 "user_id": message.from_user.id,
-                "chat_id": message.chat.id,
                 "info": info,
                 "posters": posters,
                 "page": 0,
@@ -530,44 +588,67 @@ async def post_cmd(client: Client, message: Message):
             }
 
             kb = build_post_keyboard(token, 0, len(posters), "🟣", False)
+
             await msg.delete()
             await client.send_photo(
                 chat_id=message.chat.id,
                 photo=photo,
                 caption=caption,
+                parse_mode=ParseMode.HTML,
                 reply_markup=kb
             )
     except Exception as e:
         print("POST ERROR:", e)
-        await msg.edit_text(f"❌ Error:\n`{str(e)[:800]}`")
+        try:
+            await msg.edit_text(f"❌ Error:\n`{str(e)[:800]}`")
+        except Exception:
+            pass
 
 
 async def render_and_edit(client, query, data, token):
-    page = data["page"]
-    color = data["color"]
-    posters = data["posters"]
-    clean_mode = data.get("clean_mode", False)
+    """Safe edit - message delete nahi hoga fail pe"""
+    try:
+        page = data["page"]
+        color = data["color"]
+        posters = data["posters"]
+        clean_mode = data.get("clean_mode", False)
 
-    if page not in data["base_images"]:
-        async with aiohttp.ClientSession() as session:
-            img = await download_image(session, posters[page])
-            if not img:
-                await query.answer("Image load fail", show_alert=True)
-                return
-            data["base_images"][page] = img
+        if page not in data["base_images"]:
+            async with aiohttp.ClientSession() as session:
+                img = await download_image(session, posters[page])
+                if not img:
+                    await query.answer("Image load fail", show_alert=True)
+                    return
+                data["base_images"][page] = img
 
-    base = data["base_images"][page]
-    if clean_mode:
-        photo = make_clean_image(base)
-    else:
-        photo = generate_poster(base, data["info"], COLOURS[color])
+        base = data["base_images"][page]
+        if clean_mode:
+            photo = make_clean_image(base)
+        else:
+            photo = generate_poster(base, data["info"], COLOURS[color])
 
-    caption = build_caption(data["info"], data["settings"])
-    kb = build_post_keyboard(token, page, len(posters), color, clean_mode)
-    await query.message.edit_media(
-        media=InputMediaPhoto(photo, caption=caption),
-        reply_markup=kb
-    )
+        # always fresh buffer
+        if hasattr(photo, "seek"):
+            photo.seek(0)
+
+        caption = build_caption(data["info"], data["settings"])
+        kb = build_post_keyboard(token, page, len(posters), color, clean_mode)
+
+        await query.message.edit_media(
+            media=InputMediaPhoto(
+                media=photo,
+                caption=caption,
+                parse_mode=ParseMode.HTML
+            ),
+            reply_markup=kb
+        )
+    except Exception as e:
+        print("RENDER ERR:", e)
+        # message mat delete karo - sirf alert
+        try:
+            await query.answer(f"Update fail: {str(e)[:80]}", show_alert=True)
+        except Exception:
+            pass
 
 
 @Client.on_callback_query(cb_starts("postcol|"), group=-900)
@@ -581,8 +662,8 @@ async def post_color(client: Client, query: CallbackQuery):
             return await query.answer("Invalid")
         data["color"] = color
         data["clean_mode"] = False
-        await render_and_edit(client, query, data, token)
         await query.answer(f"Colour {color}")
+        await render_and_edit(client, query, data, token)
     except Exception as e:
         print("COLOR ERR:", e)
         await query.answer("Error", show_alert=True)
@@ -599,8 +680,8 @@ async def post_page(client: Client, query: CallbackQuery):
         if page < 0 or page >= len(data["posters"]):
             return await query.answer("No more")
         data["page"] = page
+        await query.answer(f"Page {page + 1}")
         await render_and_edit(client, query, data, token)
-        await query.answer(f"Page {page+1}")
     except Exception as e:
         print("PAGE ERR:", e)
         await query.answer("Error", show_alert=True)
@@ -614,8 +695,8 @@ async def post_clean(client: Client, query: CallbackQuery):
         if not data or query.from_user.id != data["user_id"]:
             return await query.answer("Expired / not yours", show_alert=True)
         data["clean_mode"] = not data.get("clean_mode", False)
-        await render_and_edit(client, query, data, token)
         await query.answer("Clean" if data["clean_mode"] else "Design")
+        await render_and_edit(client, query, data, token)
     except Exception as e:
         print("CLEAN ERR:", e)
         await query.answer("Error", show_alert=True)
@@ -647,7 +728,7 @@ async def post_clear(client: Client, query: CallbackQuery):
                 return await query.answer("Not yours", show_alert=True)
             POST_CACHE.pop(token, None)
         try:
-            await query.message.edit_caption("❌ Cleared.")
+            await query.message.edit_caption("❌ Cleared.", parse_mode=None)
             await query.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
@@ -664,10 +745,12 @@ async def post_noop(_, query: CallbackQuery):
 @Client.on_message(filters.command("settings") & filters.private)
 async def settings_cmd(client: Client, message: Message):
     s = load_settings()
+    font_style = s.get("font_style", "normal")
     text = (
         "⚙️ **POST SETTINGS**\n\n"
         f"🎧 **Audio:** `{s.get('audio')}`\n"
         f"📺 **Pixels:** `{s.get('pixels')}`\n"
+        f"🔤 **Font:** `{font_style}`\n"
         f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`"
     )
     kb = InlineKeyboardMarkup([
@@ -679,6 +762,9 @@ async def settings_cmd(client: Client, message: Message):
             InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
             InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
         ],
+        [
+            InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font"),
+        ],
         [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")]
     ])
     await message.reply_text(text, reply_markup=kb)
@@ -687,12 +773,14 @@ async def settings_cmd(client: Client, message: Message):
 @Client.on_callback_query(cb_starts("set_"), group=-901)
 async def settings_cb(client: Client, query: CallbackQuery):
     action = query.data
+
     if action == "set_caption":
         USER_STATE[query.from_user.id] = "wait_caption"
         await query.message.reply_text(
             "📝 Caption template bhej.\n"
             "Placeholders:\n"
             "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
+            "Note: story auto Quote me aayegi.\n"
             "/cancel"
         )
     elif action == "set_audio":
@@ -707,10 +795,68 @@ async def settings_cb(client: Client, query: CallbackQuery):
             "🔘 Format:\n`Button Text - https://link.com`\n"
             "Clear: `clear`\n/cancel"
         )
+    elif action == "set_font":
+        s = load_settings()
+        cur = s.get("font_style", "normal")
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    ("✅ NORMAL" if cur == "normal" else "NORMAL"),
+                    callback_data="set_font_normal"
+                ),
+                InlineKeyboardButton(
+                    ("✅ SMALL CAPS" if cur == "smallcaps" else "SMALL CAPS"),
+                    callback_data="set_font_smallcaps"
+                ),
+            ],
+            [InlineKeyboardButton("🔙 Back", callback_data="set_font_back")]
+        ])
+        await query.message.edit_text(
+            "🔤 **Caption Font Style**\n\n"
+            "Ye niche wale caption text pe lagta hai "
+            "(title/status/story etc).\n\n"
+            f"Current: `{cur}`",
+            reply_markup=kb
+        )
+    elif action == "set_font_normal":
+        s = load_settings()
+        s["font_style"] = "normal"
+        save_settings(s)
+        await query.answer("Font: NORMAL ✅", show_alert=True)
+        await query.message.edit_text("✅ Font set: **normal**\n\nDobara /settings kar.")
+    elif action == "set_font_smallcaps":
+        s = load_settings()
+        s["font_style"] = "smallcaps"
+        save_settings(s)
+        await query.answer("Font: SMALL CAPS ✅", show_alert=True)
+        await query.message.edit_text("✅ Font set: **smallcaps**\n\nDobara /settings kar.")
+    elif action == "set_font_back":
+        s = load_settings()
+        text = (
+            "⚙️ **POST SETTINGS**\n\n"
+            f"🎧 **Audio:** `{s.get('audio')}`\n"
+            f"📺 **Pixels:** `{s.get('pixels')}`\n"
+            f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
+            f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`"
+        )
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📝 CAPTION", callback_data="set_caption"),
+                InlineKeyboardButton("🎧 AUDIO", callback_data="set_audio"),
+            ],
+            [
+                InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
+                InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
+            ],
+            [InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font")],
+            [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")]
+        ])
+        await query.message.edit_text(text, reply_markup=kb)
     elif action == "set_reset":
         save_settings(DEFAULT_SETTINGS.copy())
         await query.answer("Reset done ✅", show_alert=True)
         await query.message.edit_text("✅ Reset done. /settings dobara kar.")
+
     await query.answer()
 
 
