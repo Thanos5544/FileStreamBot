@@ -16,7 +16,7 @@ from pyrogram.types import (
     InputMediaPhoto
 )
 
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 # ================== CONFIG ==================
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
@@ -193,55 +193,51 @@ async def download_image(session, url):
 def wrap_text(text, font, max_width, draw):
     words = text.split()
     lines = []
-    line = ""
-    for w in words:
-        test = (line + " " + w).strip()
+    current = ""
+    for word in words:
+        test = (current + " " + word).strip()
         if draw.textlength(test, font=font) <= max_width:
-            line = test
+            current = test
         else:
-            if line:
-                lines.append(line)
-            line = w
-    if line:
-        lines.append(line)
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
 def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
-    """
-    Premium design like screenshot
-    NO branding, NO username, NO channel name
-    """
+    """Exact style like screenshots - NO branding"""
     W, H = 1280, 720
 
-    # base
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.62)
-    img = ImageEnhance.Contrast(img).enhance(1.1)
+    img = ImageEnhance.Brightness(img).enhance(0.68)
+    img = ImageEnhance.Contrast(img).enhance(1.08)
     img = img.convert("RGBA")
 
-    # dark left gradient
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    for x in range(0, 780):
-        alpha = int(210 * (1 - x / 780))
-        odraw.line([(x, 0), (x, H)], fill=(0, 0, 0, alpha))
-    for y in range(0, 180):
-        alpha = int(90 * (1 - y / 180))
-        odraw.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
-    for y in range(H - 160, H):
-        alpha = int(100 * ((y - (H - 160)) / 160))
-        odraw.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+    od = ImageDraw.Draw(overlay)
+
+    for x in range(0, 750):
+        alpha = int(225 * (1 - x / 750) ** 0.9)
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, alpha))
+
+    for y in range(0, 140):
+        alpha = int(70 * (1 - y / 140))
+        od.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+
+    for y in range(H - 180, H):
+        alpha = int(90 * ((y - (H - 180)) / 180))
+        od.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    # fonts
-    f_title = get_font(72, bold=True)
-    f_meta = get_font(24, semi=True)
-    f_story = get_font(22)
-    f_btn = get_font(22, bold=True)
-    f_small = get_font(20, semi=True)
+    f_title = get_font(78, bold=True)
+    f_meta = get_font(23, semi=True)
+    f_story = get_font(23)
+    f_btn = get_font(23, bold=True)
 
     title = info.get("title", "Unknown").upper()
     year = info.get("year", "")
@@ -251,81 +247,75 @@ def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    # left accent bar
-    draw.rectangle([0, 0, 10, H], fill=accent + (255,))
+    left = 60
+    y = 145
 
-    # TITLE
-    y = 150
-    title_lines = wrap_text(title, f_title, 620, draw)[:2]
-    for i, ln in enumerate(title_lines):
-        draw.text((55, y + i * 78), ln, font=f_title, fill=(255, 255, 255, 255))
-    y += len(title_lines) * 78 + 12
+    title_lines = wrap_text(title, f_title, 640, draw)[:2]
+    for i, line in enumerate(title_lines):
+        draw.text((left, y + i * 82), line, font=f_title, fill=(255, 255, 255, 255))
+    y += len(title_lines) * 82 + 8
 
-    # accent underline
-    draw.rectangle([55, y, 55 + 140, y + 7], fill=accent + (255,))
-    y += 35
+    draw.rectangle([left, y, left + 155, y + 7], fill=accent + (255,))
+    y += 32
 
-    # meta line: 2024 • DRAMA & ACTION • RETURNING
-    meta_parts = [year]
+    meta_parts = []
+    if year:
+        meta_parts.append(str(year))
     if genres:
         meta_parts.append(genres.upper())
-    if media_type == "tv" and status and status != "—":
+    if media_type == "tv" and status and status not in ["—", ""]:
         meta_parts.append(status.upper())
-    meta = "  •  ".join([p for p in meta_parts if p])
-    draw.text((55, y), meta[:70], font=f_meta, fill=(210, 210, 210, 255))
-    y += 50
+    meta = "  •  ".join(meta_parts)
+    draw.text((left, y), meta[:75], font=f_meta, fill=(200, 200, 200, 255))
+    y += 48
 
-    # story
     if story:
-        story_lines = wrap_text(story, f_story, 600, draw)[:4]
-        for i, ln in enumerate(story_lines):
-            draw.text((55, y + i * 30), ln, font=f_story, fill=(190, 190, 190, 255))
-        y += len(story_lines) * 30 + 40
+        story_lines = wrap_text(story, f_story, 620, draw)[:4]
+        for i, line in enumerate(story_lines):
+            draw.text((left, y + i * 31), line, font=f_story, fill=(185, 185, 185, 255))
+        y += len(story_lines) * 31 + 45
     else:
-        y += 30
+        y += 35
 
-    # ===== BUTTONS ON IMAGE =====
-    # WATCH NOW
-    btn1_x, btn1_y = 55, y
-    btn1_w, btn1_h = 210, 52
+    btn_h = 54
+    btn_y = y
+
+    watch_w = 225
     draw.rounded_rectangle(
-        [btn1_x, btn1_y, btn1_x + btn1_w, btn1_y + btn1_h],
-        radius=10,
+        [left, btn_y, left + watch_w, btn_y + btn_h],
+        radius=12,
         fill=accent + (255,)
     )
-    draw.text((btn1_x + 28, btn1_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((left + 22, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    # IMDb badge
-    btn2_x = btn1_x + btn1_w + 18
-    btn2_w, btn2_h = 170, 52
+    imdb_x = left + watch_w + 16
+    imdb_w = 175
     draw.rounded_rectangle(
-        [btn2_x, btn1_y, btn2_x + btn2_w, btn1_y + btn2_h],
-        radius=10,
-        fill=(15, 15, 15, 230)
+        [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
+        radius=12,
+        fill=(12, 12, 12, 240)
     )
-    # border
     draw.rounded_rectangle(
-        [btn2_x, btn1_y, btn2_x + btn2_w, btn1_y + btn2_h],
-        radius=10,
-        outline=(255, 255, 255, 40),
+        [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
+        radius=12,
+        outline=(255, 255, 255, 45),
         width=2
     )
-    draw.text((btn2_x + 28, btn1_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((imdb_x + 26, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
     final = img.convert("RGB")
     bio = BytesIO()
-    final.save(bio, format="JPEG", quality=93)
+    final.save(bio, format="JPEG", quality=94)
     bio.seek(0)
     bio.name = "poster.jpg"
     return bio
 
 
 def make_clean_image(base_img: Image.Image):
-    """Original clean image (no design)"""
     W, H = 1280, 720
     img = base_img.copy().resize((W, H), Image.LANCZOS)
     bio = BytesIO()
-    img.save(bio, format="JPEG", quality=93)
+    img.save(bio, format="JPEG", quality=94)
     bio.seek(0)
     bio.name = "clean.jpg"
     return bio
@@ -356,7 +346,7 @@ def build_caption(info: dict, settings: dict):
     return caption.strip()
 
 
-def build_post_keyboard(token, page, total, current_color="🟢", clean_mode=False):
+def build_post_keyboard(token, page, total, current_color="🔴", clean_mode=False):
     colours = list(COLOURS.keys())
     color_btns = []
     for c in colours:
@@ -391,8 +381,8 @@ def build_url_buttons(settings):
         if isinstance(b, dict) and b.get("text") and b.get("url"):
             rows.append([InlineKeyboardButton(b["text"], url=b["url"])])
     if not rows:
-        rows = [[InlineKeyboardButton("No buttons in settings", callback_data="postnoop")]]
-    rows.append([InlineKeyboardButton("🔙 Back to Editor", callback_data="postbackedit")])
+        rows = [[InlineKeyboardButton("No buttons in /settings", callback_data="postnoop")]]
+    rows.append([InlineKeyboardButton("🗑 CLEAR", callback_data="postclear|final")])
     return InlineKeyboardMarkup(rows)
     # ================== /post COMMAND ==================
 @Client.on_message(filters.command("post") & filters.private)
@@ -488,7 +478,6 @@ async def post_cmd(client: Client, message: Message):
             POST_CACHE[token] = {
                 "user_id": message.from_user.id,
                 "chat_id": message.chat.id,
-                "message_id": None,
                 "info": info,
                 "posters": posters,
                 "page": 0,
@@ -502,13 +491,12 @@ async def post_cmd(client: Client, message: Message):
             kb = build_post_keyboard(token, 0, len(posters), "🔴", False)
 
             await msg.delete()
-            sent = await client.send_photo(
+            await client.send_photo(
                 chat_id=message.chat.id,
                 photo=photo,
                 caption=caption,
                 reply_markup=kb
             )
-            POST_CACHE[token]["message_id"] = sent.id
 
     except Exception as e:
         print("POST ERROR:", e)
@@ -516,7 +504,6 @@ async def post_cmd(client: Client, message: Message):
 
 
 async def render_and_edit(client, query, data, token):
-    """common render"""
     page = data["page"]
     color = data["color"]
     posters = data["posters"]
@@ -546,7 +533,6 @@ async def render_and_edit(client, query, data, token):
     )
 
 
-# ================== CALLBACKS ==================
 @Client.on_callback_query(cb_starts("postcol|"), group=-900)
 async def post_color(client: Client, query: CallbackQuery):
     try:
@@ -616,7 +602,6 @@ async def post_use(client: Client, query: CallbackQuery):
         if not data or query.from_user.id != data["user_id"]:
             return await query.answer("Expired / not yours", show_alert=True)
 
-        # final image keep + settings buttons lagao
         kb = build_url_buttons(data["settings"])
         await query.message.edit_reply_markup(reply_markup=kb)
         await query.answer("✅ Buttons applied")
@@ -630,12 +615,14 @@ async def post_use(client: Client, query: CallbackQuery):
 @Client.on_callback_query(cb_starts("postclear|"), group=-900)
 async def post_clear(client: Client, query: CallbackQuery):
     try:
-        _, token = query.data.split("|")
-        data = POST_CACHE.get(token)
-        if data and query.from_user.id != data["user_id"]:
-            return await query.answer("Not yours", show_alert=True)
+        parts = query.data.split("|")
+        token = parts[1] if len(parts) > 1 else None
+        if token and token != "final":
+            data = POST_CACHE.get(token)
+            if data and query.from_user.id != data["user_id"]:
+                return await query.answer("Not yours", show_alert=True)
+            POST_CACHE.pop(token, None)
 
-        POST_CACHE.pop(token, None)
         try:
             await query.message.edit_caption("❌ Cleared.")
             await query.message.edit_reply_markup(reply_markup=None)
@@ -649,13 +636,6 @@ async def post_clear(client: Client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex(r"^postnoop$"), group=-900)
 async def post_noop(_, query: CallbackQuery):
     await query.answer()
-    raise StopPropagation
-
-
-@Client.on_callback_query(filters.regex(r"^postbackedit$"), group=-900)
-async def post_back_edit(client: Client, query: CallbackQuery):
-    # simple info
-    await query.answer("Dobara /post se naya banao", show_alert=True)
     raise StopPropagation
 
 
