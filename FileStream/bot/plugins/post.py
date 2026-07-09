@@ -207,35 +207,43 @@ def wrap_text(text, font, max_width, draw):
 
 def generate_poster(base_img, info, accent):
     W, H = 1280, 720
+
+    # darker cinematic base
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.60)
-    img = ImageEnhance.Contrast(img).enhance(1.20)
+    img = ImageEnhance.Brightness(img).enhance(0.52)
+    img = ImageEnhance.Contrast(img).enhance(1.28)
+    img = ImageEnhance.Color(img).enhance(1.02)
     img = img.convert("RGBA")
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     ar, ag, ab = accent
 
-    for x in range(0, 800):
-        p = (1.0 - (x / 800.0)) ** 0.65
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(240 * p)))
-        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(40 * p)))
+    # left dark + soft accent wash (darker like nova)
+    for x in range(0, 780):
+        p = (1.0 - (x / 780.0)) ** 0.60
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(250 * p)))
+        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(28 * p)))
 
-    for y in range(0, 100):
-        a = int(50 * (1 - y / 100))
+    # top / bottom soft dark
+    for y in range(0, 90):
+        a = int(45 * (1 - y / 90))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
-
-    for y in range(H - 150, H):
-        a = int(70 * ((y - (H - 150)) / 150))
+    for y in range(H - 140, H):
+        a = int(70 * ((y - (H - 140)) / 140))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    f_title = get_font(86, bold=True)
-    f_meta = get_font(22, semi=True)
-    f_story = get_font(21)
-    f_btn = get_font(22, bold=True)
+    # LEFT FULL COLOUR LINE (selected colour)
+    draw.rectangle([0, 0, 10, H], fill=accent + (255,))
+
+    # fonts (title thoda chhota)
+    f_title = get_font(76, bold=True)
+    f_meta = get_font(21, semi=True)
+    f_story = get_font(19)
+    f_btn = get_font(21, bold=True)
 
     title = info.get("title", "Unknown").upper()
     year = info.get("year", "")
@@ -245,19 +253,22 @@ def generate_poster(base_img, info, accent):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    left = 70
-    y = 150
+    left = 72
+    y = 155
 
-    title_lines = wrap_text(title, f_title, 680, draw)[:2]
+    # TITLE (thoda chhota)
+    title_lines = wrap_text(title, f_title, 650, draw)[:2]
     for i, line in enumerate(title_lines):
-        ty = y + i * 90
-        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 140))
+        ty = y + i * 82
+        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 150))
         draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 245))
-    y += len(title_lines) * 90 + 10
+    y += len(title_lines) * 82 + 10
 
-    draw.rectangle([left, y, left + 150, y + 6], fill=accent + (255,))
-    y += 32
+    # underline
+    draw.rectangle([left, y, left + 140, y + 6], fill=accent + (255,))
+    y += 30
 
+    # meta
     meta_parts = []
     if year:
         meta_parts.append(str(year))
@@ -273,42 +284,46 @@ def generate_poster(base_img, info, accent):
             st = "RETURNING"
         meta_parts.append(st)
     meta = "  •  ".join(meta_parts)
-    draw.text((left, y), meta[:78], font=f_meta, fill=(200, 200, 200, 230))
-    y += 45
+    draw.text((left, y), meta[:76], font=f_meta, fill=(195, 195, 195, 230))
+    y += 42
 
+    # story (thodi chhoti + soft)
     if story:
-        story_lines = wrap_text(story, f_story, 520, draw)[:4]
+        story_lines = wrap_text(story, f_story, 500, draw)[:4]
         for i, line in enumerate(story_lines):
-            draw.text((left, y + i * 28), line, font=f_story, fill=(185, 185, 185, 170))
-        y += len(story_lines) * 28 + 40
+            draw.text((left, y + i * 26), line, font=f_story, fill=(175, 175, 175, 160))
+        y += len(story_lines) * 26 + 38
     else:
         y += 30
 
-    btn_h = 52
-    btn_y = min(y, H - 110)
+    # buttons
+    btn_h = 50
+    btn_y = min(y, H - 105)
 
-    watch_w = 220
+    # WATCH NOW
+    watch_w = 210
     draw.rounded_rectangle(
         [left, btn_y, left + watch_w, btn_y + btn_h],
-        radius=12,
+        radius=11,
         fill=accent + (255,)
     )
-    draw.text((left + 24, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((left + 22, btn_y + 12), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    imdb_x = left + watch_w + 14
-    imdb_w = 170
+    # IMDb (★ hata diya)
+    imdb_x = left + watch_w + 12
+    imdb_w = 155
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
-        radius=12,
-        fill=(0, 0, 0, 230)
+        radius=11,
+        fill=(0, 0, 0, 235)
     )
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
-        radius=12,
-        outline=(255, 255, 255, 70),
+        radius=11,
+        outline=(255, 255, 255, 65),
         width=2
     )
-    draw.text((imdb_x + 22, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((imdb_x + 28, btn_y + 12), f"{rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
     final = img.convert("RGB")
     bio = BytesIO()
