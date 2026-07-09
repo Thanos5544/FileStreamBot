@@ -209,47 +209,59 @@ def wrap_text(text, font, max_width, draw):
 
 def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     """
-    NOVA-style layout (NO branding)
-    - left dark panel + accent colour wash
-    - big title
-    - solid WATCH NOW + black IMDb badge
+    Closer to NOVA look (NO branding)
+    - solid dark left panel
+    - soft accent wash
+    - ghost title depth
+    - solid ★ IMDb badge
     """
     W, H = 1280, 720
 
+    # base image
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.70)
-    img = ImageEnhance.Contrast(img).enhance(1.15)
-    img = ImageEnhance.Color(img).enhance(1.08)
+    img = ImageEnhance.Brightness(img).enhance(0.66)
+    img = ImageEnhance.Contrast(img).enhance(1.18)
+    img = ImageEnhance.Color(img).enhance(1.05)
     img = img.convert("RGBA")
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     ar, ag, ab = accent
 
-    # LEFT DARK PANEL + ACCENT WASH
-    for x in range(0, 780):
-        p = 1 - (x / 780.0)
-        p = p ** 0.75
-        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(245 * p)))
-        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(48 * p)))
+    # ===== SOLID DARK LEFT PANEL (NOVA jaisa) =====
+    for x in range(0, 720):
+        p = 1 - (x / 720.0)
+        p = p ** 0.55   # stronger dark, kam transparent
 
-    # top soft
-    for y in range(0, 130):
-        a = int(55 * (1 - y / 130))
+        # heavy black
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, int(255 * p)))
+
+        # soft accent wash (kam rakhna)
+        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(28 * p)))
+
+    # extra dark strip extreme left
+    for x in range(0, 90):
+        od.line([(x, 0), (x, H)], fill=(0, 0, 0, 90))
+
+    # top fade
+    for y in range(0, 110):
+        a = int(50 * (1 - y / 110))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
-    # bottom soft
-    for y in range(H - 190, H):
-        a = int(85 * ((y - (H - 190)) / 190))
+    # bottom fade
+    for y in range(H - 160, H):
+        a = int(70 * ((y - (H - 160)) / 160))
         od.line([(0, y), (W, y)], fill=(0, 0, 0, a))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    f_title = get_font(88, bold=True)
-    f_meta = get_font(23, semi=True)
-    f_story = get_font(23)
-    f_btn = get_font(23, bold=True)
+    # fonts
+    f_title = get_font(86, bold=True)
+    f_ghost = get_font(96, bold=True)
+    f_meta = get_font(22, semi=True)
+    f_story = get_font(22)
+    f_btn = get_font(22, bold=True)
 
     title = info.get("title", "Unknown").upper()
     year = info.get("year", "")
@@ -259,73 +271,90 @@ def generate_poster(base_img: Image.Image, info: dict, accent: tuple):
     story = info.get("story", "")
     media_type = info.get("media_type", "movie")
 
-    left = 72
-    y = 155
+    left = 70
+    y = 150
 
-    # TITLE
-    title_lines = wrap_text(title, f_title, 700, draw)[:2]
+    # ===== GHOST TITLE (depth like NOVA) =====
+    ghost_lines = wrap_text(title, f_ghost, 760, draw)[:2]
+    for i, line in enumerate(ghost_lines):
+        draw.text(
+            (left + 18, y - 8 + i * 98),
+            line,
+            font=f_ghost,
+            fill=(255, 255, 255, 28)
+        )
+
+    # ===== MAIN TITLE =====
+    title_lines = wrap_text(title, f_title, 680, draw)[:2]
     for i, line in enumerate(title_lines):
-        ty = y + i * 92
-        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 120))
+        ty = y + i * 90
+        # soft shadow
+        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 160))
         draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 255))
-    y += len(title_lines) * 92 + 10
+    y += len(title_lines) * 90 + 8
 
-    # UNDERLINE
-    draw.rectangle([left, y, left + 150, y + 7], fill=accent + (255,))
-    y += 36
+    # ===== UNDERLINE =====
+    draw.rectangle([left, y, left + 145, y + 7], fill=accent + (255,))
+    y += 34
 
-    # META
+    # ===== META =====
     meta_parts = []
     if year:
         meta_parts.append(str(year))
     if genres:
-        meta_parts.append(genres.upper())
+        # NOVA short style
+        g = genres.upper().replace("ACTION & ADVENTURE", "ACTION").replace("ACTION AND ADVENTURE", "ACTION")
+        # keep short
+        if len(g) > 28:
+            parts = [p.strip() for p in g.split(",")]
+            g = " & ".join(parts[:2]) if len(parts) >= 2 else parts[0]
+        meta_parts.append(g)
     if media_type == "tv" and status and status not in ["—", ""]:
         st = status.upper()
         if "RETURNING" in st:
             st = "RETURNING"
         meta_parts.append(st)
     meta = "  •  ".join(meta_parts)
-    draw.text((left, y), meta[:80], font=f_meta, fill=(205, 205, 205, 255))
-    y += 48
+    draw.text((left, y), meta[:78], font=f_meta, fill=(200, 200, 200, 255))
+    y += 46
 
-    # STORY
+    # ===== STORY =====
     if story:
-        story_lines = wrap_text(story, f_story, 620, draw)[:4]
+        story_lines = wrap_text(story, f_story, 560, draw)[:4]
         for i, line in enumerate(story_lines):
-            draw.text((left, y + i * 32), line, font=f_story, fill=(190, 190, 190, 255))
-        y += len(story_lines) * 32 + 46
+            draw.text((left, y + i * 30), line, font=f_story, fill=(180, 180, 180, 255))
+        y += len(story_lines) * 30 + 42
     else:
-        y += 40
+        y += 36
 
-    # BUTTONS
-    btn_h = 54
-    btn_y = min(y, H - 115)
+    # ===== BUTTONS =====
+    btn_h = 52
+    btn_y = min(y, H - 110)
 
     # WATCH NOW
-    watch_w = 230
+    watch_w = 220
     draw.rounded_rectangle(
         [left, btn_y, left + watch_w, btn_y + btn_h],
-        radius=12,
+        radius=11,
         fill=accent + (255,)
     )
-    draw.text((left + 26, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((left + 24, btn_y + 13), "▶  WATCH NOW", font=f_btn, fill=(255, 255, 255, 255))
 
-    # IMDb solid black
+    # IMDb - SOLID BLACK + STAR (NOVA style)
     imdb_x = left + watch_w + 14
-    imdb_w = 175
+    imdb_w = 168
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
-        radius=12,
-        fill=(8, 8, 8, 250)
+        radius=11,
+        fill=(0, 0, 0, 255)
     )
     draw.rounded_rectangle(
         [imdb_x, btn_y, imdb_x + imdb_w, btn_y + btn_h],
-        radius=12,
-        outline=(255, 255, 255, 55),
+        radius=11,
+        outline=(255, 255, 255, 70),
         width=2
     )
-    draw.text((imdb_x + 24, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
+    draw.text((imdb_x + 22, btn_y + 13), f"★  {rating} IMDb", font=f_btn, fill=(255, 255, 255, 255))
 
     final = img.convert("RGB")
     bio = BytesIO()
