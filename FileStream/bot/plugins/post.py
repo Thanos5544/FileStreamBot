@@ -9,7 +9,7 @@ import urllib.request
 from io import BytesIO
 from pathlib import Path
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, StopPropagation
 from pyrogram.types import (
     Message,
     CallbackQuery,
@@ -280,7 +280,7 @@ def generate_poster(base_img, info, accent):
 
     draw.rectangle([0, 0, 10, H], fill=accent + (255,))
 
-    f_title = get_font(76, bold=True)
+    f_title = get_font(74, bold=True)
     f_meta = get_font(21, semi=True)
     f_story = get_font(19)
     f_btn = get_font(21, bold=True)
@@ -294,17 +294,17 @@ def generate_poster(base_img, info, accent):
     media_type = info.get("media_type", "movie")
 
     left = 72
-    y = 155
+    y = 175  # thoda neeche
 
     title_lines = wrap_text(title, f_title, 650, draw)[:2]
     for i, line in enumerate(title_lines):
-        ty = y + i * 82
+        ty = y + i * 80
         draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 90))
         draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 250))
-    y += len(title_lines) * 82 + 14
+    y += len(title_lines) * 80 + 14
 
     draw.rectangle([left, y, left + 140, y + 6], fill=accent + (255,))
-    y += 34
+    y += 32
 
     meta_parts = []
     if year:
@@ -322,18 +322,18 @@ def generate_poster(base_img, info, accent):
         meta_parts.append(st)
     meta = "  •  ".join(meta_parts)
     draw.text((left, y), meta[:76], font=f_meta, fill=(195, 195, 195, 230))
-    y += 42
+    y += 40
 
     if story:
         story_lines = wrap_text(story, f_story, 500, draw)[:4]
         for i, line in enumerate(story_lines):
             draw.text((left, y + i * 26), line, font=f_story, fill=(175, 175, 175, 160))
-        y += len(story_lines) * 26 + 38
+        y += len(story_lines) * 26 + 36
     else:
-        y += 30
+        y += 28
 
     btn_h = 50
-    btn_y = min(y, H - 105)
+    btn_y = min(y, H - 100)
 
     watch_w = 210
     draw.rounded_rectangle(
@@ -376,51 +376,39 @@ def make_clean_image(base_img):
     return bio
 
 
+def fresh_photo(bio: BytesIO) -> BytesIO:
+    bio.seek(0)
+    out = BytesIO(bio.read())
+    out.name = "poster.jpg"
+    out.seek(0)
+    return out
+
+
 def build_caption(info, settings):
-    """
-    Caption with story in Telegram Quote (blockquote)
-    + optional small caps for whole caption body
-    """
     template = settings.get("caption_template", DEFAULT_SETTINGS["caption_template"])
     font_style = settings.get("font_style", "normal")
 
     raw = {
-        "title": info.get("title", "Unknown"),
-        "year": info.get("year", "N/A"),
-        "status": info.get("status", "—"),
-        "episodes": info.get("episodes", "—"),
-        "rating": info.get("rating", "N/A"),
-        "pixels": settings.get("pixels", "480p | 720p | 1080p"),
-        "audio": settings.get("audio", "Hindi"),
-        "genres": info.get("genres", "—"),
-        "story": info.get("story", "No overview available."),
+        "title": str(info.get("title", "Unknown")),
+        "year": str(info.get("year", "N/A")),
+        "status": str(info.get("status", "—")),
+        "episodes": str(info.get("episodes", "—")),
+        "rating": str(info.get("rating", "N/A")),
+        "pixels": str(settings.get("pixels", "480p | 720p | 1080p")),
+        "audio": str(settings.get("audio", "Hindi")),
+        "genres": str(info.get("genres", "—")),
+        "story": str(info.get("story", "No overview available.")),
     }
 
-    # build without story first
-    temp = template
-    # replace story placeholder with marker
-    if "{story}" in temp:
-        head = temp.split("{story}")[0]
-        # remove trailing ≡ or similar before story if present
-        head = head.rstrip()
+    if "{story}" in template:
+        head = template.split("{story}")[0].rstrip()
         if head.endswith("≡"):
             head = head[:-1].rstrip()
     else:
-        head = temp
-        raw_story = raw["story"]
-        # no story placeholder
-        caption_plain = temp.format(**raw)
-        if info.get("media_type") == "movie":
-            lines = [ln for ln in caption_plain.splitlines() if "Status:" not in ln and "Episodes:" not in ln]
-            caption_plain = "\n".join(lines)
-        if font_style == "smallcaps":
-            caption_plain = to_small_caps(caption_plain)
-        return html.escape(caption_plain)
+        head = template
 
-    data_esc = {k: html.escape(str(v)) for k, v in raw.items() if k != "story"}
-    # format head with escaped values (story not in head)
     try:
-        head_fmt = head.format(**{**data_esc, "story": ""})
+        head_fmt = head.format(**{**raw, "story": ""})
     except Exception:
         head_fmt = head
 
@@ -432,26 +420,26 @@ def build_caption(info, settings):
             lines.append(line)
         head_fmt = "\n".join(lines).rstrip()
 
-    story = html.escape(str(raw["story"]))
-
+    story = raw["story"]
     if font_style == "smallcaps":
         head_fmt = to_small_caps(head_fmt)
         story = to_small_caps(story)
 
-    # Telegram quote
-    caption = f"{head_fmt}\n\n<blockquote>{story}</blockquote>"
-    return caption.strip()
+    head_esc = html.escape(head_fmt)
+    story_esc = html.escape(story)
+    # story in quote
+    return f"{head_esc}\n\n<blockquote>{story_esc}</blockquote>"
 
 
 def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=False):
     colours = list(COLOURS.keys())
-    color_btns = []
-    for c in colours:
-        mark = f"•{c}•" if c == current_color else c
-        color_btns.append(InlineKeyboardButton(mark, callback_data=f"postcol|{token}|{c}"))
-
-    row1 = color_btns[:4]
-    row2 = color_btns[4:]
+    color_btns = [
+        InlineKeyboardButton(
+            f"•{c}•" if c == current_color else c,
+            callback_data=f"postcol|{token}|{c}"
+        )
+        for c in colours
+    ]
 
     nav = []
     if page > 0:
@@ -460,21 +448,22 @@ def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=Fal
     if page < total - 1:
         nav.append(InlineKeyboardButton("NEXT ➡️", callback_data=f"postpage|{token}|{page+1}"))
 
-    action_row = [
-        InlineKeyboardButton("🖼 CLEAN" if not clean_mode else "🎨 DESIGN", callback_data=f"postclean|{token}"),
-        InlineKeyboardButton("✅ USE THIS", callback_data=f"postuse|{token}"),
+    buttons = [
+        color_btns[:4],
+        color_btns[4:],
+        nav,
+        [
+            InlineKeyboardButton("🖼 CLEAN" if not clean_mode else "🎨 DESIGN", callback_data=f"postclean|{token}"),
+            InlineKeyboardButton("✅ USE THIS", callback_data=f"postuse|{token}"),
+        ],
+        [InlineKeyboardButton("🗑 CLEAR", callback_data=f"postclear|{token}")],
     ]
-
-    buttons = [row1, row2, nav, action_row, [
-        InlineKeyboardButton("🗑 CLEAR", callback_data=f"postclear|{token}")
-    ]]
     return InlineKeyboardMarkup(buttons)
 
 
 def build_url_buttons(settings):
-    raw = settings.get("buttons", [])
     rows = []
-    for b in raw:
+    for b in settings.get("buttons", []):
         if isinstance(b, dict) and b.get("text") and b.get("url"):
             rows.append([InlineKeyboardButton(b["text"], url=b["url"])])
     if not rows:
@@ -489,8 +478,7 @@ async def post_cmd(client: Client, message: Message):
 
     if len(message.command) < 2:
         return await message.reply_text(
-            "❌ Use:\n`/post movie or series name`\n\n"
-            "Example:\n`/post the witcher`"
+            "❌ Use:\n`/post movie or series name`\n\nExample:\n`/post the witcher`"
         )
 
     query = " ".join(message.command[1:]).strip()
@@ -509,17 +497,14 @@ async def post_cmd(client: Client, message: Message):
             search = await search_tmdb(session, search_q)
             results = search.get("results", [])
             item = select_best(results, year)
-
             if not item:
                 return await msg.edit_text("❌ Kuch nahi mila bro.")
 
             media_type = item["media_type"]
             media_id = item["id"]
-
             details = await get_details(session, media_type, media_id)
             images_data = await get_images(session, media_type, media_id)
 
-            # landscape only
             posters = []
             if details.get("backdrop_path"):
                 posters.append(tmdb_img_url(details["backdrop_path"]))
@@ -535,7 +520,6 @@ async def post_cmd(client: Client, message: Message):
 
             if not posters and details.get("poster_path"):
                 posters.append(tmdb_img_url(details["poster_path"]))
-
             if not posters:
                 return await msg.edit_text("❌ Images nahi mile.")
 
@@ -589,10 +573,15 @@ async def post_cmd(client: Client, message: Message):
 
             kb = build_post_keyboard(token, 0, len(posters), "🟣", False)
 
-            await msg.delete()
+            # only loading message delete, final photo nahi
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+
             await client.send_photo(
                 chat_id=message.chat.id,
-                photo=photo,
+                photo=fresh_photo(photo),
                 caption=caption,
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb
@@ -606,7 +595,7 @@ async def post_cmd(client: Client, message: Message):
 
 
 async def render_and_edit(client, query, data, token):
-    """Safe edit - message delete nahi hoga fail pe"""
+    # NEVER delete message here
     try:
         page = data["page"]
         color = data["color"]
@@ -627,10 +616,7 @@ async def render_and_edit(client, query, data, token):
         else:
             photo = generate_poster(base, data["info"], COLOURS[color])
 
-        # always fresh buffer
-        if hasattr(photo, "seek"):
-            photo.seek(0)
-
+        photo = fresh_photo(photo)
         caption = build_caption(data["info"], data["settings"])
         kb = build_post_keyboard(token, page, len(posters), color, clean_mode)
 
@@ -644,113 +630,156 @@ async def render_and_edit(client, query, data, token):
         )
     except Exception as e:
         print("RENDER ERR:", e)
-        # message mat delete karo - sirf alert
         try:
-            await query.answer(f"Update fail: {str(e)[:80]}", show_alert=True)
+            await query.answer("Update failed, try again", show_alert=True)
         except Exception:
             pass
 
 
-@Client.on_callback_query(cb_starts("postcol|"), group=-900)
+@Client.on_callback_query(cb_starts("postcol|"), group=-999)
 async def post_color(client: Client, query: CallbackQuery):
     try:
         _, token, color = query.data.split("|")
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            return await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Expired / not yours", show_alert=True)
+            raise StopPropagation
         if color not in COLOURS:
-            return await query.answer("Invalid")
+            await query.answer("Invalid")
+            raise StopPropagation
+
         data["color"] = color
         data["clean_mode"] = False
         await query.answer(f"Colour {color}")
         await render_and_edit(client, query, data, token)
+    except StopPropagation:
+        raise
     except Exception as e:
         print("COLOR ERR:", e)
-        await query.answer("Error", show_alert=True)
+        try:
+            await query.answer("Error", show_alert=True)
+        except Exception:
+            pass
+    raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("postpage|"), group=-900)
+@Client.on_callback_query(cb_starts("postpage|"), group=-999)
 async def post_page(client: Client, query: CallbackQuery):
     try:
         _, token, page_s = query.data.split("|")
         page = int(page_s)
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            return await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Expired / not yours", show_alert=True)
+            raise StopPropagation
         if page < 0 or page >= len(data["posters"]):
-            return await query.answer("No more")
+            await query.answer("No more")
+            raise StopPropagation
+
         data["page"] = page
         await query.answer(f"Page {page + 1}")
         await render_and_edit(client, query, data, token)
+    except StopPropagation:
+        raise
     except Exception as e:
         print("PAGE ERR:", e)
-        await query.answer("Error", show_alert=True)
+        try:
+            await query.answer("Error", show_alert=True)
+        except Exception:
+            pass
+    raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("postclean|"), group=-900)
+@Client.on_callback_query(cb_starts("postclean|"), group=-999)
 async def post_clean(client: Client, query: CallbackQuery):
     try:
         _, token = query.data.split("|")
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            return await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Expired / not yours", show_alert=True)
+            raise StopPropagation
+
         data["clean_mode"] = not data.get("clean_mode", False)
         await query.answer("Clean" if data["clean_mode"] else "Design")
         await render_and_edit(client, query, data, token)
+    except StopPropagation:
+        raise
     except Exception as e:
         print("CLEAN ERR:", e)
-        await query.answer("Error", show_alert=True)
+        try:
+            await query.answer("Error", show_alert=True)
+        except Exception:
+            pass
+    raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("postuse|"), group=-900)
+@Client.on_callback_query(cb_starts("postuse|"), group=-999)
 async def post_use(client: Client, query: CallbackQuery):
     try:
         _, token = query.data.split("|")
         data = POST_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            return await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Expired / not yours", show_alert=True)
+            raise StopPropagation
+
         kb = build_url_buttons(data["settings"])
         await query.message.edit_reply_markup(reply_markup=kb)
         await query.answer("✅ Buttons applied")
+    except StopPropagation:
+        raise
     except Exception as e:
         print("USE ERR:", e)
-        await query.answer("Error", show_alert=True)
+        try:
+            await query.answer("Error", show_alert=True)
+        except Exception:
+            pass
+    raise StopPropagation
 
 
-@Client.on_callback_query(cb_starts("postclear|"), group=-900)
+@Client.on_callback_query(cb_starts("postclear|"), group=-999)
 async def post_clear(client: Client, query: CallbackQuery):
     try:
         parts = query.data.split("|")
         token = parts[1] if len(parts) > 1 else None
+
         if token and token != "final":
             data = POST_CACHE.get(token)
             if data and query.from_user.id != data["user_id"]:
-                return await query.answer("Not yours", show_alert=True)
+                await query.answer("Not yours", show_alert=True)
+                raise StopPropagation
             POST_CACHE.pop(token, None)
+
+        # message DELETE nahi - sirf caption/buttons clean
         try:
-            await query.message.edit_caption("❌ Cleared.", parse_mode=None)
+            await query.message.edit_caption("❌ Cleared.")
+        except Exception:
+            pass
+        try:
             await query.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
         await query.answer("Cleared")
+    except StopPropagation:
+        raise
     except Exception as e:
         print("CLEAR ERR:", e)
+    raise StopPropagation
 
 
-@Client.on_callback_query(filters.regex(r"^postnoop$"), group=-900)
+@Client.on_callback_query(filters.regex(r"^postnoop$"), group=-999)
 async def post_noop(_, query: CallbackQuery):
     await query.answer()
+    raise StopPropagation
 
 
 @Client.on_message(filters.command("settings") & filters.private)
 async def settings_cmd(client: Client, message: Message):
     s = load_settings()
-    font_style = s.get("font_style", "normal")
     text = (
         "⚙️ **POST SETTINGS**\n\n"
         f"🎧 **Audio:** `{s.get('audio')}`\n"
         f"📺 **Pixels:** `{s.get('pixels')}`\n"
-        f"🔤 **Font:** `{font_style}`\n"
+        f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
         f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`"
     )
     kb = InlineKeyboardMarkup([
@@ -762,102 +791,79 @@ async def settings_cmd(client: Client, message: Message):
             InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
             InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
         ],
-        [
-            InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font"),
-        ],
-        [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")]
+        [InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font")],
+        [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")],
     ])
     await message.reply_text(text, reply_markup=kb)
 
 
-@Client.on_callback_query(cb_starts("set_"), group=-901)
+@Client.on_callback_query(cb_starts("set_"), group=-998)
 async def settings_cb(client: Client, query: CallbackQuery):
-    action = query.data
+    try:
+        action = query.data
 
-    if action == "set_caption":
-        USER_STATE[query.from_user.id] = "wait_caption"
-        await query.message.reply_text(
-            "📝 Caption template bhej.\n"
-            "Placeholders:\n"
-            "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
-            "Note: story auto Quote me aayegi.\n"
-            "/cancel"
-        )
-    elif action == "set_audio":
-        USER_STATE[query.from_user.id] = "wait_audio"
-        await query.message.reply_text("🎧 Audio bhej\n/cancel")
-    elif action == "set_pixels":
-        USER_STATE[query.from_user.id] = "wait_pixels"
-        await query.message.reply_text("📺 Pixels bhej\nExample: 480p | 720p | 1080p\n/cancel")
-    elif action == "set_buttons":
-        USER_STATE[query.from_user.id] = "wait_buttons"
-        await query.message.reply_text(
-            "🔘 Format:\n`Button Text - https://link.com`\n"
-            "Clear: `clear`\n/cancel"
-        )
-    elif action == "set_font":
-        s = load_settings()
-        cur = s.get("font_style", "normal")
-        kb = InlineKeyboardMarkup([
-            [
+        if action == "set_caption":
+            USER_STATE[query.from_user.id] = "wait_caption"
+            await query.answer()
+            await query.message.reply_text(
+                "📝 Caption template bhej.\n"
+                "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
+                "Story auto Quote me aati hai.\n/cancel"
+            )
+        elif action == "set_audio":
+            USER_STATE[query.from_user.id] = "wait_audio"
+            await query.answer()
+            await query.message.reply_text("🎧 Audio bhej\n/cancel")
+        elif action == "set_pixels":
+            USER_STATE[query.from_user.id] = "wait_pixels"
+            await query.answer()
+            await query.message.reply_text("📺 Pixels bhej\nExample: 480p | 720p | 1080p\n/cancel")
+        elif action == "set_buttons":
+            USER_STATE[query.from_user.id] = "wait_buttons"
+            await query.answer()
+            await query.message.reply_text(
+                "🔘 Format:\n`Button Text - https://link.com`\nClear: `clear`\n/cancel"
+            )
+        elif action == "set_font":
+            s = load_settings()
+            cur = s.get("font_style", "normal")
+            kb = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
-                    ("✅ NORMAL" if cur == "normal" else "NORMAL"),
+                    "✅ NORMAL" if cur == "normal" else "NORMAL",
                     callback_data="set_font_normal"
                 ),
                 InlineKeyboardButton(
-                    ("✅ SMALL CAPS" if cur == "smallcaps" else "SMALL CAPS"),
+                    "✅ SMALL CAPS" if cur == "smallcaps" else "SMALL CAPS",
                     callback_data="set_font_smallcaps"
                 ),
-            ],
-            [InlineKeyboardButton("🔙 Back", callback_data="set_font_back")]
-        ])
-        await query.message.edit_text(
-            "🔤 **Caption Font Style**\n\n"
-            "Ye niche wale caption text pe lagta hai "
-            "(title/status/story etc).\n\n"
-            f"Current: `{cur}`",
-            reply_markup=kb
-        )
-    elif action == "set_font_normal":
-        s = load_settings()
-        s["font_style"] = "normal"
-        save_settings(s)
-        await query.answer("Font: NORMAL ✅", show_alert=True)
-        await query.message.edit_text("✅ Font set: **normal**\n\nDobara /settings kar.")
-    elif action == "set_font_smallcaps":
-        s = load_settings()
-        s["font_style"] = "smallcaps"
-        save_settings(s)
-        await query.answer("Font: SMALL CAPS ✅", show_alert=True)
-        await query.message.edit_text("✅ Font set: **smallcaps**\n\nDobara /settings kar.")
-    elif action == "set_font_back":
-        s = load_settings()
-        text = (
-            "⚙️ **POST SETTINGS**\n\n"
-            f"🎧 **Audio:** `{s.get('audio')}`\n"
-            f"📺 **Pixels:** `{s.get('pixels')}`\n"
-            f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
-            f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`"
-        )
-        kb = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📝 CAPTION", callback_data="set_caption"),
-                InlineKeyboardButton("🎧 AUDIO", callback_data="set_audio"),
-            ],
-            [
-                InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
-                InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
-            ],
-            [InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font")],
-            [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")]
-        ])
-        await query.message.edit_text(text, reply_markup=kb)
-    elif action == "set_reset":
-        save_settings(DEFAULT_SETTINGS.copy())
-        await query.answer("Reset done ✅", show_alert=True)
-        await query.message.edit_text("✅ Reset done. /settings dobara kar.")
-
-    await query.answer()
+            ]])
+            await query.answer()
+            await query.message.reply_text(
+                f"🔤 Caption Font Style\nCurrent: `{cur}`",
+                reply_markup=kb
+            )
+        elif action == "set_font_normal":
+            s = load_settings()
+            s["font_style"] = "normal"
+            save_settings(s)
+            await query.answer("Font: NORMAL ✅", show_alert=True)
+        elif action == "set_font_smallcaps":
+            s = load_settings()
+            s["font_style"] = "smallcaps"
+            save_settings(s)
+            await query.answer("Font: SMALL CAPS ✅", show_alert=True)
+        elif action == "set_reset":
+            save_settings(DEFAULT_SETTINGS.copy())
+            await query.answer("Reset done ✅", show_alert=True)
+        else:
+            await query.answer()
+    except Exception as e:
+        print("SETTINGS CB ERR:", e)
+        try:
+            await query.answer("Error", show_alert=True)
+        except Exception:
+            pass
+    raise StopPropagation
 
 
 @Client.on_message(filters.private & filters.text, group=50)
