@@ -11,11 +11,8 @@ from pathlib import Path
 
 from pyrogram import Client, filters, StopPropagation
 from pyrogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    InputMediaPhoto
+    Message, CallbackQuery, InlineKeyboardMarkup,
+    InlineKeyboardButton, InputMediaPhoto
 )
 from pyrogram.enums import ParseMode
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
@@ -34,26 +31,26 @@ ANIME_CACHE = {}
 ANIME_STATE = {}
 CACHE_TIME = 1800
 
-# 13 neon anime colours
+# 13 colours
 COLOURS = {
-    "🔴": (255, 59, 78),
-    "🟠": (255, 140, 50),
-    "🟡": (255, 214, 10),
-    "🟢": (50, 215, 120),
-    "🔵": (64, 156, 255),
-    "🟣": (191, 90, 242),
-    "🩷": (255, 105, 180),
-    "🩵": (100, 210, 255),
+    "🔴": (255, 70, 90),
+    "🟠": (255, 145, 60),
+    "🟡": (255, 220, 70),
+    "🟢": (70, 230, 140),
+    "🔵": (70, 160, 255),
+    "🟣": (190, 100, 255),
+    "🩷": (255, 110, 190),
+    "🩵": (110, 220, 255),
     "⚪": (245, 245, 250),
-    "⚫": (40, 40, 48),
-    "🟤": (180, 120, 80),
-    "💚": (80, 220, 160),
-    "💙": (90, 130, 255),
+    "⚫": (35, 35, 42),
+    "🟤": (190, 130, 90),
+    "💚": (90, 230, 170),
+    "💙": (100, 140, 255),
 }
 
 DEFAULT_SETTINGS = {
     "audio": "Japanese | Hindi",
-    "pixels": "480p | 720p | 1080p",
+    "pixels": "720p | 1080p",
     "buttons": [],
     "font_style": "normal",
     "caption_template": "",
@@ -81,18 +78,17 @@ SMALL_CAPS = {
     "y": "ʏ", "z": "ᴢ",
 }
 
-CAPTION_EXAMPLE = """✦ {title}
-──────────────
-◎ Type: Anime
-◎ Season: S{seasons}
-◎ Status: {status}
-◎ Episodes: {episodes}
-◎ Rating: ★ {rating}
-◎ Quality: {pixels}
-◎ Audio: {audio}
-◎ Genres: {genres}
-──────────────
-✧ {story}"""
+CAPTION_EXAMPLE = """『 {title} 』
+━━━━━━━━━━━━
+◈ Season : S{seasons}
+◈ Status : {status}
+◈ Eps    : {episodes}
+◈ Score  : {rating}
+◈ Quality: {pixels}
+◈ Audio  : {audio}
+◈ Tags   : {genres}
+━━━━━━━━━━━━
+{story}"""
 
 
 def to_small_caps(text: str) -> str:
@@ -149,9 +145,7 @@ def cleanup_cache():
 
 
 def cb_starts(prefix: str):
-    return filters.create(
-        lambda _, __, q: bool(q.data and q.data.startswith(prefix))
-    )
+    return filters.create(lambda _, __, q: bool(q.data and q.data.startswith(prefix)))
 
 
 def ensure_fonts():
@@ -161,13 +155,11 @@ def ensure_fonts():
             continue
         for url in urls:
             try:
-                print(f"[ANIME] Downloading font: {name}")
                 urllib.request.urlretrieve(url, path)
                 if path.exists() and path.stat().st_size > 10000:
-                    print(f"[ANIME] Font ready: {name}")
                     break
             except Exception as e:
-                print(f"[ANIME] Font fail {name}: {e}")
+                print("Font fail", name, e)
 
 
 def get_font(size, bold=False, semi=False):
@@ -184,25 +176,17 @@ def get_font(size, bold=False, semi=False):
         p = FONT_DIR / "Montserrat-Regular.ttf"
         if p.exists():
             return ImageFont.truetype(str(p), size)
-    except Exception as e:
-        print("get_font error:", e)
+    except Exception:
+        pass
     return ImageFont.load_default()
 
 
 def tmdb_img_url(path):
-    if not path:
-        return None
-    return TMDB_IMG + path
+    return (TMDB_IMG + path) if path else None
 
 
 def get_title(item):
-    return (
-        item.get("title")
-        or item.get("name")
-        or item.get("original_title")
-        or item.get("original_name")
-        or "Unknown"
-    )
+    return item.get("title") or item.get("name") or item.get("original_title") or item.get("original_name") or "Unknown"
 
 
 def get_year(item):
@@ -211,18 +195,12 @@ def get_year(item):
 
 
 async def search_tmdb(session, query):
-    async with session.get(
-        f"{TMDB_BASE}/search/multi",
-        params={"api_key": TMDB_API, "query": query}
-    ) as resp:
+    async with session.get(f"{TMDB_BASE}/search/multi", params={"api_key": TMDB_API, "query": query}) as resp:
         return await resp.json()
 
 
 async def get_details(session, media_type, media_id):
-    async with session.get(
-        f"{TMDB_BASE}/{media_type}/{media_id}",
-        params={"api_key": TMDB_API, "language": "en-US"}
-    ) as resp:
+    async with session.get(f"{TMDB_BASE}/{media_type}/{media_id}", params={"api_key": TMDB_API, "language": "en-US"}) as resp:
         return await resp.json()
 
 
@@ -238,10 +216,7 @@ def select_anime(results, year=None):
     filtered = [x for x in results if x.get("media_type") in ("movie", "tv")]
     if not filtered:
         return None
-    # prefer TV for anime series
-    tv = [x for x in filtered if x.get("media_type") == "tv"]
-    movies = [x for x in filtered if x.get("media_type") == "movie"]
-    pool = tv + movies
+    pool = [x for x in filtered if x.get("media_type") == "tv"] + [x for x in filtered if x.get("media_type") == "movie"]
     if year:
         for x in pool:
             d = x.get("release_date") or x.get("first_air_date") or ""
@@ -254,17 +229,15 @@ async def download_image(session, url):
     try:
         async with session.get(url) as resp:
             if resp.status == 200:
-                data = await resp.read()
-                return Image.open(BytesIO(data)).convert("RGB")
+                return Image.open(BytesIO(await resp.read())).convert("RGB")
     except Exception as e:
-        print("Image download error:", e)
+        print("dl err", e)
     return None
 
 
 def wrap_text(text, font, max_width, draw):
     words = text.split()
-    lines = []
-    current = ""
+    lines, current = [], ""
     for word in words:
         test = (current + " " + word).strip()
         if draw.textlength(test, font=font) <= max_width:
@@ -280,138 +253,111 @@ def wrap_text(text, font, max_width, draw):
 
 def generate_anime_poster(base_img, info, accent):
     """
-    Soft Neon Anime template
-    - soft dark (art preserve)
-    - neon left bar
-    - soft wash + glow title
-    - ANIME chip
-    - totally different from post.py
+    COMPLETELY different from post.py
+    Bottom Neon Banner layout:
+    - full art visible
+    - NO left dark panel
+    - text at BOTTOM
+    - score top-right
+    - year top-left
+    - neon bottom line
     """
     W, H = 1280, 720
+    ar, ag, ab = accent
 
+    # keep art bright (anime art matter)
     img = base_img.copy().resize((W, H), Image.LANCZOS)
-    img = ImageEnhance.Brightness(img).enhance(0.72)
-    img = ImageEnhance.Contrast(img).enhance(1.12)
-    img = ImageEnhance.Color(img).enhance(1.18)
+    img = ImageEnhance.Brightness(img).enhance(0.88)
+    img = ImageEnhance.Contrast(img).enhance(1.08)
+    img = ImageEnhance.Color(img).enhance(1.20)
     img = img.convert("RGBA")
 
-    # soft blur layer for glow base
-    glow_layer = img.filter(ImageFilter.GaussianBlur(radius=1.2))
-    img = Image.blend(img, glow_layer, 0.18)
+    # very light overall tint
+    tint = Image.new("RGBA", (W, H), (ar, ag, ab, 18))
+    img = Image.alpha_composite(img, tint)
 
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
-    ar, ag, ab = accent
 
-    # soft left panel (not heavy black)
-    for x in range(0, 700):
-        p = (1.0 - (x / 700.0)) ** 0.75
-        od.line([(x, 0), (x, H)], fill=(8, 10, 22, int(185 * p)))
-        od.line([(x, 0), (x, H)], fill=(ar, ag, ab, int(45 * p)))
+    # BOTTOM heavy gradient only (not left)
+    for y in range(H - 340, H):
+        p = (y - (H - 340)) / 340
+        p = p ** 1.1
+        od.line([(0, y), (W, y)], fill=(5, 8, 18, int(235 * p)))
+        od.line([(0, y), (W, y)], fill=(ar, ag, ab, int(25 * p)))
 
-    # neon edge bar
-    od.rectangle([0, 0, 8, H], fill=accent + (255,))
-    # soft neon glow next to bar
-    for i, a in enumerate([70, 40, 20]):
-        od.line([(9 + i, 0), (9 + i, H)], fill=(ar, ag, ab, a))
-
-    # top/bottom soft vignette
-    for y in range(0, 70):
-        od.line([(0, y), (W, y)], fill=(0, 0, 0, int(35 * (1 - y / 70))))
-    for y in range(H - 110, H):
-        od.line([(0, y), (W, y)], fill=(0, 0, 0, int(50 * ((y - (H - 110)) / 110))))
+    # soft top dark for badges readability
+    for y in range(0, 90):
+        od.line([(0, y), (W, y)], fill=(0, 0, 0, int(70 * (1 - y / 90))))
 
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
 
-    f_title = get_font(68, bold=True)
-    f_meta = get_font(20, semi=True)
-    f_story = get_font(18)
-    f_btn = get_font(20, bold=True)
-    f_chip = get_font(15, bold=True)
+    f_title = get_font(64, bold=True)
+    f_sub = get_font(22, semi=True)
+    f_small = get_font(18, semi=True)
+    f_tiny = get_font(16, bold=True)
 
     title = info.get("title", "Unknown").upper()
     year = info.get("year", "")
     rating = info.get("rating", "N/A")
     genres = info.get("genres", "")
-    status = info.get("status", "")
-    story = info.get("story", "")
     seasons = info.get("seasons")
+    status = info.get("status", "")
 
-    left = 68
-    y = 95
+    # ===== TOP LEFT year pill =====
+    yp = f" {year} " if year else " ANIME "
+    tw = int(draw.textlength(yp, font=f_tiny)) + 24
+    draw.rounded_rectangle([28, 24, 28 + tw, 54], radius=16, fill=(0, 0, 0, 160))
+    draw.rounded_rectangle([28, 24, 28 + tw, 54], radius=16, outline=accent + (180,), width=2)
+    draw.text((40, 30), yp.strip(), font=f_tiny, fill=(255, 255, 255, 255))
 
-    # ANIME chip
-    chip_w, chip_h = 110, 30
-    draw.rounded_rectangle([left, y, left + chip_w, y + chip_h], radius=15, fill=accent + (240,))
-    draw.text((left + 18, y + 6), "✦ ANIME", font=f_chip, fill=(255, 255, 255, 255))
-    y += 50
+    # ===== TOP RIGHT score badge =====
+    score = f"★ {rating}"
+    sw = int(draw.textlength(score, font=f_small)) + 34
+    sx = W - sw - 28
+    draw.rounded_rectangle([sx, 22, sx + sw, 58], radius=18, fill=accent + (235,))
+    draw.text((sx + 16, 30), score, font=f_small, fill=(255, 255, 255, 255))
 
-    # TITLE soft glow
-    title_lines = wrap_text(title, f_title, 620, draw)[:2]
-    for i, line in enumerate(title_lines):
-        ty = y + i * 72
-        # glow
-        for ox, oy, aa in [(0, 0, 50), (2, 2, 80), (-1, 1, 40)]:
-            draw.text((left + ox, ty + oy), line, font=f_title, fill=(ar, ag, ab, aa))
-        draw.text((left + 2, ty + 2), line, font=f_title, fill=(0, 0, 0, 100))
-        draw.text((left, ty), line, font=f_title, fill=(255, 255, 255, 250))
-    y += len(title_lines) * 72 + 10
+    # ===== BOTTOM CONTENT =====
+    y = H - 250
 
-    # neon underline
-    draw.rectangle([left, y, left + 160, y + 5], fill=accent + (255,))
-    # soft underline glow
-    draw.rectangle([left, y + 5, left + 160, y + 8], fill=(ar, ag, ab, 60))
+    # small anime label
+    draw.text((40, y), "ANIME SERIES" if info.get("media_type") == "tv" else "ANIME FILM",
+              font=f_tiny, fill=accent + (255,))
     y += 28
 
-    # meta
-    meta_parts = []
-    if year:
-        meta_parts.append(str(year))
+    # title bottom
+    lines = wrap_text(title, f_title, W - 80, draw)[:2]
+    for i, line in enumerate(lines):
+        ty = y + i * 68
+        draw.text((42, ty + 2), line, font=f_title, fill=(0, 0, 0, 120))
+        draw.text((40, ty), line, font=f_title, fill=(255, 255, 255, 255))
+    y += len(lines) * 68 + 8
+
+    # meta row
+    bits = []
     if seasons:
-        meta_parts.append(f"S{seasons}")
-    if genres:
-        g = genres.upper()
-        parts = [p.strip() for p in g.split(",")]
-        if len(parts) >= 2:
-            g = f"{parts[0]} · {parts[1]}"
-        meta_parts.append(g)
+        bits.append(f"S{seasons}")
     if status and status not in ["—", ""]:
-        st = status.upper()
-        if "RETURNING" in st:
-            st = "RETURNING"
-        meta_parts.append(st)
-    meta = "  ·  ".join(meta_parts)
-    draw.text((left, y), meta[:78], font=f_meta, fill=(210, 215, 230, 230))
-    y += 38
+        st = "RETURNING" if "Returning" in status else status.upper()
+        bits.append(st)
+    if genres:
+        gparts = [p.strip() for p in genres.split(",")]
+        bits.append(gparts[0].upper() if gparts else genres.upper())
+    meta = "   •   ".join(bits)
+    draw.text((40, y), meta[:70], font=f_sub, fill=(210, 215, 230, 230))
+    y += 40
 
-    # story soft
-    if story:
-        story_lines = wrap_text(story, f_story, 500, draw)[:4]
-        for i, line in enumerate(story_lines):
-            draw.text((left, y + i * 25), line, font=f_story, fill=(190, 195, 210, 170))
-        y += len(story_lines) * 25 + 34
-    else:
-        y += 26
+    # full width neon line
+    draw.rectangle([40, y, W - 40, y + 4], fill=accent + (255,))
+    draw.rectangle([40, y + 4, W - 40, y + 7], fill=(ar, ag, ab, 50))
 
-    # buttons - soft neon style
-    btn_h = 48
-    btn_y = min(y, H - 100)
-
-    watch_w = 200
-    draw.rounded_rectangle([left, btn_y, left + watch_w, btn_y + btn_h], radius=24, fill=accent + (255,))
-    draw.text((left + 28, btn_y + 12), "▶  WATCH", font=f_btn, fill=(255, 255, 255, 255))
-
-    score_x = left + watch_w + 12
-    score_w = 150
-    draw.rounded_rectangle([score_x, btn_y, score_x + score_w, btn_y + btn_h], radius=24, fill=(12, 14, 24, 220))
-    draw.rounded_rectangle(
-        [score_x, btn_y, score_x + score_w, btn_y + btn_h],
-        radius=24,
-        outline=(ar, ag, ab, 140),
-        width=2
-    )
-    draw.text((score_x + 28, btn_y + 12), f"★ {rating}", font=f_btn, fill=(255, 255, 255, 255))
+    # bottom right mini tag
+    tag = "NOW STREAMING"
+    tw2 = int(draw.textlength(tag, font=f_tiny)) + 20
+    draw.rounded_rectangle([W - tw2 - 40, H - 48, W - 40, H - 22], radius=12, fill=(0, 0, 0, 150))
+    draw.text((W - tw2 - 30, H - 42), tag, font=f_tiny, fill=accent + (255,))
 
     final = img.convert("RGB")
     bio = BytesIO()
@@ -422,8 +368,7 @@ def generate_anime_poster(base_img, info, accent):
 
 
 def make_clean_image(base_img):
-    W, H = 1280, 720
-    img = base_img.copy().resize((W, H), Image.LANCZOS)
+    img = base_img.copy().resize((1280, 720), Image.LANCZOS)
     bio = BytesIO()
     img.save(bio, format="JPEG", quality=95)
     bio.seek(0)
@@ -445,7 +390,7 @@ def build_default_caption(info, settings):
     status = str(info.get("status", "—"))
     episodes = str(info.get("episodes", "—"))
     rating = str(info.get("rating", "N/A"))
-    pixels = str(settings.get("pixels", "480p | 720p | 1080p"))
+    pixels = str(settings.get("pixels", "720p | 1080p"))
     audio = str(settings.get("audio", "Japanese | Hindi"))
     genres = str(info.get("genres", "—"))
     story = str(info.get("story", "No overview available."))
@@ -454,31 +399,30 @@ def build_default_caption(info, settings):
     season_txt = f"S{seasons}" if (media_type == "tv" and seasons) else "—"
 
     if media_type == "tv":
-        head = (
-            f"✦ {title}\n"
-            f"──────────────\n"
-            f"◎ Type: Anime\n"
-            f"◎ Season: {season_txt}\n"
-            f"◎ Status: {status}\n"
-            f"◎ Episodes: {episodes}\n"
-            f"◎ Rating: ★ {rating}\n"
-            f"◎ Quality: {pixels}\n"
-            f"◎ Audio: {audio}\n"
-            f"◎ Genres: {genres}\n"
-            f"──────────────"
+        return (
+            f"『 {title} 』\n"
+            f"━━━━━━━━━━━━\n"
+            f"◈ Season : {season_txt}\n"
+            f"◈ Status : {status}\n"
+            f"◈ Eps    : {episodes}\n"
+            f"◈ Score  : {rating}\n"
+            f"◈ Quality: {pixels}\n"
+            f"◈ Audio  : {audio}\n"
+            f"◈ Tags   : {genres}\n"
+            f"━━━━━━━━━━━━\n"
+            f"{story}"
         )
-    else:
-        head = (
-            f"✦ {title}\n"
-            f"──────────────\n"
-            f"◎ Type: Anime Movie\n"
-            f"◎ Rating: ★ {rating}\n"
-            f"◎ Quality: {pixels}\n"
-            f"◎ Audio: {audio}\n"
-            f"◎ Genres: {genres}\n"
-            f"──────────────"
-        )
-    return f"{head}\n✧ {story}"
+    return (
+        f"『 {title} 』\n"
+        f"━━━━━━━━━━━━\n"
+        f"◈ Type   : Anime Movie\n"
+        f"◈ Score  : {rating}\n"
+        f"◈ Quality: {pixels}\n"
+        f"◈ Audio  : {audio}\n"
+        f"◈ Tags   : {genres}\n"
+        f"━━━━━━━━━━━━\n"
+        f"{story}"
+    )
 
 
 def build_caption(info, settings):
@@ -492,7 +436,7 @@ def build_caption(info, settings):
         "episodes": str(info.get("episodes", "—")),
         "seasons": str(info.get("seasons") or ""),
         "rating": str(info.get("rating", "N/A")),
-        "pixels": str(settings.get("pixels", "480p | 720p | 1080p")),
+        "pixels": str(settings.get("pixels", "720p | 1080p")),
         "audio": str(settings.get("audio", "Japanese | Hindi")),
         "genres": str(info.get("genres", "—")),
         "story": str(info.get("story", "No overview available.")),
@@ -503,7 +447,6 @@ def build_caption(info, settings):
             if info.get("media_type") != "tv":
                 raw["seasons"] = ""
             caption = custom.format(**raw)
-            caption = caption.replace("  (S) ", " ").replace("(S) ", "")
             caption = re.sub(r"\n{3,}", "\n\n", caption).strip()
         except Exception as e:
             print("ANIME CAPTION ERR:", e)
@@ -514,12 +457,12 @@ def build_caption(info, settings):
     if font_style == "smallcaps":
         caption = to_small_caps(caption)
 
-    # story quote if ✧ or ≡ present
-    for mark in ("✧", "≡"):
-        if mark in caption:
-            head, story = caption.rsplit(mark, 1)
-            head = head.rstrip()
-            story = (mark + story).strip()
+    # last line(s) after ━━━ as quote if story present
+    if "━━━━━━━━━━━━" in caption:
+        parts = caption.rsplit("━━━━━━━━━━━━", 1)
+        if len(parts) == 2 and parts[1].strip():
+            head = (parts[0] + "━━━━━━━━━━━━").rstrip()
+            story = parts[1].strip()
             return f"{html.escape(head)}\n<blockquote>{html.escape(story)}</blockquote>"
 
     return html.escape(caption)
@@ -527,21 +470,18 @@ def build_caption(info, settings):
 
 def build_anime_keyboard(token, page, total, current_color="🩷", clean_mode=False):
     colours = list(COLOURS.keys())
-    # 13 colours -> 5 + 4 + 4
     color_btns = [
         InlineKeyboardButton(
-            f"•{c}•" if c == current_color else c,
+            f"[{c}]" if c == current_color else c,
             callback_data=f"anicol|{token}|{c}"
-        )
-        for c in colours
+        ) for c in colours
     ]
-
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⟵ Prev", callback_data=f"anipage|{token}|{page-1}"))
-    nav.append(InlineKeyboardButton(f"· {page+1}/{total} ·", callback_data="aninoop"))
+        nav.append(InlineKeyboardButton("⟨", callback_data=f"anipage|{token}|{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1} / {total}", callback_data="aninoop"))
     if page < total - 1:
-        nav.append(InlineKeyboardButton("Next ⟶", callback_data=f"anipage|{token}|{page+1}"))
+        nav.append(InlineKeyboardButton("⟩", callback_data=f"anipage|{token}|{page+1}"))
 
     return InlineKeyboardMarkup([
         color_btns[:5],
@@ -549,10 +489,10 @@ def build_anime_keyboard(token, page, total, current_color="🩷", clean_mode=Fa
         color_btns[9:],
         nav,
         [
-            InlineKeyboardButton("✧ Clean" if not clean_mode else "✦ Design", callback_data=f"aniclean|{token}"),
-            InlineKeyboardButton("✓ Use This", callback_data=f"aniuse|{token}"),
+            InlineKeyboardButton("Raw Art" if not clean_mode else "Neon Art", callback_data=f"aniclean|{token}"),
+            InlineKeyboardButton("Lock ✓", callback_data=f"aniuse|{token}"),
         ],
-        [InlineKeyboardButton("✕ Clear", callback_data=f"aniclear|{token}")],
+        [InlineKeyboardButton("Close", callback_data=f"aniclear|{token}")],
     ])
 
 
@@ -562,28 +502,23 @@ def build_url_buttons(settings):
         if isinstance(b, dict) and b.get("text") and b.get("url"):
             rows.append([InlineKeyboardButton(b["text"], url=b["url"])])
     if not rows:
-        rows = [[InlineKeyboardButton("No buttons in /animesettings", callback_data="aninoop")]]
-    rows.append([InlineKeyboardButton("✕ Clear", callback_data="aniclear|final")])
+        rows = [[InlineKeyboardButton("No links set", callback_data="aninoop")]]
+    rows.append([InlineKeyboardButton("Close", callback_data="aniclear|final")])
     return InlineKeyboardMarkup(rows)
 
 @Client.on_message(filters.command("anime") & (filters.private | filters.group))
 async def anime_cmd(client: Client, message: Message):
     cleanup_cache()
     ensure_fonts()
-
     if not message.from_user:
         return await message.reply_text("❌ User nahi mila.")
 
     user_id = message.from_user.id
-
     if len(message.command) < 2:
-        return await message.reply_text(
-            "❌ Use:\n`/anime anime name`\n\n"
-            "Example:\n`/anime naruto`\n`/anime demon slayer`"
-        )
+        return await message.reply_text("❌ Use:\n`/anime name`\n\nExample:\n`/anime naruto`")
 
     query = " ".join(message.command[1:]).strip()
-    msg = await message.reply_text("✦ Searching anime & crafting poster...")
+    msg = await message.reply_text("✦ Crafting anime banner...")
 
     try:
         year = None
@@ -596,8 +531,7 @@ async def anime_cmd(client: Client, message: Message):
 
         async with aiohttp.ClientSession() as session:
             search = await search_tmdb(session, search_q)
-            results = search.get("results", [])
-            item = select_anime(results, year)
+            item = select_anime(search.get("results", []), year)
             if not item:
                 return await msg.edit_text("❌ Anime nahi mila.")
 
@@ -609,16 +543,13 @@ async def anime_cmd(client: Client, message: Message):
             posters = []
             if details.get("backdrop_path"):
                 posters.append(tmdb_img_url(details["backdrop_path"]))
-
             for p in images_data.get("backdrops", [])[:20]:
-                w = p.get("width") or 0
-                h = p.get("height") or 0
+                w, h = p.get("width") or 0, p.get("height") or 0
                 if w and h and w < h:
                     continue
                 url = tmdb_img_url(p.get("file_path"))
                 if url and url not in posters:
                     posters.append(url)
-
             if not posters and details.get("poster_path"):
                 posters.append(tmdb_img_url(details["poster_path"]))
             if not posters:
@@ -635,9 +566,7 @@ async def anime_cmd(client: Client, message: Message):
                 episodes = f"{eps}+" if eps else "—"
                 seasons = details.get("number_of_seasons")
             else:
-                status = "—"
-                episodes = "—"
-                seasons = None
+                status, episodes, seasons = "—", "—", None
 
             story = (details.get("overview") or "No overview available.").strip()
             if len(story) > 280:
@@ -657,7 +586,7 @@ async def anime_cmd(client: Client, message: Message):
 
             base = await download_image(session, posters[0])
             if not base:
-                return await msg.edit_text("❌ Poster download fail.")
+                return await msg.edit_text("❌ Download fail.")
 
             settings = load_settings(user_id)
             photo = generate_anime_poster(base, info, COLOURS["🩷"])
@@ -675,8 +604,6 @@ async def anime_cmd(client: Client, message: Message):
                 "time": time.time(),
             }
 
-            kb = build_anime_keyboard(token, 0, len(posters), "🩷", False)
-
             try:
                 await msg.delete()
             except Exception:
@@ -687,7 +614,7 @@ async def anime_cmd(client: Client, message: Message):
                 photo=fresh_photo(photo),
                 caption=caption,
                 parse_mode=ParseMode.HTML,
-                reply_markup=kb
+                reply_markup=build_anime_keyboard(token, 0, len(posters), "🩷", False)
             )
     except Exception as e:
         print("ANIME ERROR:", e)
@@ -699,11 +626,8 @@ async def anime_cmd(client: Client, message: Message):
 
 async def render_anime(client, query, data, token):
     try:
-        page = data["page"]
-        color = data["color"]
-        posters = data["posters"]
-        clean_mode = data.get("clean_mode", False)
-        user_id = data["user_id"]
+        page, color, posters = data["page"], data["color"], data["posters"]
+        clean_mode, user_id = data.get("clean_mode", False), data["user_id"]
 
         if page not in data["base_images"]:
             async with aiohttp.ClientSession() as session:
@@ -714,23 +638,16 @@ async def render_anime(client, query, data, token):
                 data["base_images"][page] = img
 
         base = data["base_images"][page]
-        if clean_mode:
-            photo = make_clean_image(base)
-        else:
-            photo = generate_anime_poster(base, data["info"], COLOURS[color])
-
+        photo = make_clean_image(base) if clean_mode else generate_anime_poster(base, data["info"], COLOURS[color])
         settings = load_settings(user_id)
-        photo = fresh_photo(photo)
-        caption = build_caption(data["info"], settings)
-        kb = build_anime_keyboard(token, page, len(posters), color, clean_mode)
 
         await query.message.edit_media(
             media=InputMediaPhoto(
-                media=photo,
-                caption=caption,
+                media=fresh_photo(photo),
+                caption=build_caption(data["info"], settings),
                 parse_mode=ParseMode.HTML
             ),
-            reply_markup=kb
+            reply_markup=build_anime_keyboard(token, page, len(posters), color, clean_mode)
         )
     except Exception as e:
         print("ANIME RENDER ERR:", e)
@@ -746,19 +663,19 @@ async def ani_color(client: Client, query: CallbackQuery):
         _, token, color = query.data.split("|")
         data = ANIME_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Not yours", show_alert=True)
             raise StopPropagation
         if color not in COLOURS:
             await query.answer("Invalid")
             raise StopPropagation
         data["color"] = color
         data["clean_mode"] = False
-        await query.answer(f"Colour {color}")
+        await query.answer(f"{color}")
         await render_anime(client, query, data, token)
     except StopPropagation:
         raise
     except Exception as e:
-        print("ANI COLOR ERR:", e)
+        print("ANI COLOR", e)
         try:
             await query.answer("Error", show_alert=True)
         except Exception:
@@ -773,18 +690,18 @@ async def ani_page(client: Client, query: CallbackQuery):
         page = int(page_s)
         data = ANIME_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Not yours", show_alert=True)
             raise StopPropagation
         if page < 0 or page >= len(data["posters"]):
             await query.answer("No more")
             raise StopPropagation
         data["page"] = page
-        await query.answer(f"Page {page + 1}")
+        await query.answer(f"{page+1}")
         await render_anime(client, query, data, token)
     except StopPropagation:
         raise
     except Exception as e:
-        print("ANI PAGE ERR:", e)
+        print("ANI PAGE", e)
         try:
             await query.answer("Error", show_alert=True)
         except Exception:
@@ -798,15 +715,15 @@ async def ani_clean(client: Client, query: CallbackQuery):
         _, token = query.data.split("|")
         data = ANIME_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Not yours", show_alert=True)
             raise StopPropagation
         data["clean_mode"] = not data.get("clean_mode", False)
-        await query.answer("Clean" if data["clean_mode"] else "Design")
+        await query.answer("Raw" if data["clean_mode"] else "Neon")
         await render_anime(client, query, data, token)
     except StopPropagation:
         raise
     except Exception as e:
-        print("ANI CLEAN ERR:", e)
+        print("ANI CLEAN", e)
         try:
             await query.answer("Error", show_alert=True)
         except Exception:
@@ -820,16 +737,14 @@ async def ani_use(client: Client, query: CallbackQuery):
         _, token = query.data.split("|")
         data = ANIME_CACHE.get(token)
         if not data or query.from_user.id != data["user_id"]:
-            await query.answer("Expired / not yours", show_alert=True)
+            await query.answer("Not yours", show_alert=True)
             raise StopPropagation
-        settings = load_settings(data["user_id"])
-        kb = build_url_buttons(settings)
-        await query.message.edit_reply_markup(reply_markup=kb)
-        await query.answer("✓ Applied")
+        await query.message.edit_reply_markup(reply_markup=build_url_buttons(load_settings(data["user_id"])))
+        await query.answer("Locked ✓")
     except StopPropagation:
         raise
     except Exception as e:
-        print("ANI USE ERR:", e)
+        print("ANI USE", e)
         try:
             await query.answer("Error", show_alert=True)
         except Exception:
@@ -849,18 +764,18 @@ async def ani_clear(client: Client, query: CallbackQuery):
                 raise StopPropagation
             ANIME_CACHE.pop(token, None)
         try:
-            await query.message.edit_caption("✕ Cleared.")
+            await query.message.edit_caption("Closed.")
         except Exception:
             pass
         try:
             await query.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
-        await query.answer("Cleared")
+        await query.answer("Closed")
     except StopPropagation:
         raise
     except Exception as e:
-        print("ANI CLEAR ERR:", e)
+        print("ANI CLEAR", e)
     raise StopPropagation
 
 
@@ -879,22 +794,17 @@ async def anime_settings_cmd(client: Client, message: Message):
     custom = (s.get("caption_template") or "").strip()
     text = (
         "✦ **ANIME SETTINGS** (sirf teri)\n\n"
-        f"🎧 **Audio:** `{s.get('audio')}`\n"
-        f"📺 **Quality:** `{s.get('pixels')}`\n"
-        f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
-        f"📝 **Caption:** `{'Custom' if custom else 'Default'}`\n"
-        f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`\n\n"
-        "_PM + Group same settings_"
+        f"🎧 Audio: `{s.get('audio')}`\n"
+        f"📺 Quality: `{s.get('pixels')}`\n"
+        f"🔤 Font: `{s.get('font_style', 'normal')}`\n"
+        f"📝 Caption: `{'Custom' if custom else 'Default'}`\n"
+        f"🔗 Buttons: `{len(s.get('buttons', []))}`"
     )
     kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📝 CAPTION", callback_data="aset_caption"),
-            InlineKeyboardButton("🎧 AUDIO", callback_data="aset_audio"),
-        ],
-        [
-            InlineKeyboardButton("📺 QUALITY", callback_data="aset_pixels"),
-            InlineKeyboardButton("🔘 BUTTONS", callback_data="aset_buttons"),
-        ],
+        [InlineKeyboardButton("📝 CAPTION", callback_data="aset_caption"),
+         InlineKeyboardButton("🎧 AUDIO", callback_data="aset_audio")],
+        [InlineKeyboardButton("📺 QUALITY", callback_data="aset_pixels"),
+         InlineKeyboardButton("🔗 BUTTONS", callback_data="aset_buttons")],
         [InlineKeyboardButton("🔤 FONT", callback_data="aset_font")],
         [InlineKeyboardButton("↺ RESET", callback_data="aset_reset")],
     ])
@@ -911,33 +821,24 @@ async def anime_settings_cb(client: Client, query: CallbackQuery):
             ANIME_STATE[uid] = "wait_caption"
             await query.answer()
             await query.message.reply_text(
-                "📝 **Anime caption template** bhej\n\n"
-                "**Placeholders:**\n"
+                "📝 Anime caption template bhej\n\n"
+                "Placeholders:\n"
                 "`{title} {year} {status} {episodes} {seasons} {rating} {pixels} {audio} {genres} {story}`\n\n"
-                "**Example:**\n"
-                f"```\n{CAPTION_EXAMPLE}\n```\n\n"
-                "• `{story}` se story control\n"
-                "• Default: `default`\n"
-                "• Cancel: /anicancel"
+                f"**Example:**\n```\n{CAPTION_EXAMPLE}\n```\n\n"
+                "Default: `default`\nCancel: /anicancel"
             )
-
         elif action == "aset_audio":
             ANIME_STATE[uid] = "wait_audio"
             await query.answer()
-            await query.message.reply_text("🎧 Audio bhej\nExample: `Japanese | Hindi`\n/anicancel")
-
+            await query.message.reply_text("🎧 Audio bhej\nEx: `Japanese | Hindi`\n/anicancel")
         elif action == "aset_pixels":
             ANIME_STATE[uid] = "wait_pixels"
             await query.answer()
-            await query.message.reply_text("📺 Quality bhej\nExample: `480p | 720p | 1080p`\n/anicancel")
-
+            await query.message.reply_text("📺 Quality bhej\nEx: `720p | 1080p`\n/anicancel")
         elif action == "aset_buttons":
             ANIME_STATE[uid] = "wait_buttons"
             await query.answer()
-            await query.message.reply_text(
-                "🔘 Format:\n`Button Text - https://link.com`\nClear: `clear`\n/anicancel"
-            )
-
+            await query.message.reply_text("🔗 `Text - https://link.com`\nClear: `clear`\n/anicancel")
         elif action == "aset_font":
             s = load_settings(uid)
             cur = s.get("font_style", "normal")
@@ -946,42 +847,38 @@ async def anime_settings_cb(client: Client, query: CallbackQuery):
                 InlineKeyboardButton("✅ SMALL CAPS" if cur == "smallcaps" else "SMALL CAPS", callback_data="aset_font_smallcaps"),
             ]])
             await query.answer()
-            await query.message.edit_text(
-                f"🔤 **Font Style**\n\nCurrent: `{cur}`",
-                reply_markup=kb
-            )
-
+            await query.message.edit_text(f"🔤 Font\nCurrent: `{cur}`", reply_markup=kb)
         elif action == "aset_font_normal":
             s = load_settings(uid)
             s["font_style"] = "normal"
             save_settings(uid, s)
-            kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ NORMAL", callback_data="aset_font_normal"),
-                InlineKeyboardButton("SMALL CAPS", callback_data="aset_font_smallcaps"),
-            ]])
             await query.answer("NORMAL ✅", show_alert=True)
-            await query.message.edit_text("🔤 **Font Style**\n\nCurrent: `normal`", reply_markup=kb)
-
+            await query.message.edit_text(
+                "🔤 Font\nCurrent: `normal`",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ NORMAL", callback_data="aset_font_normal"),
+                    InlineKeyboardButton("SMALL CAPS", callback_data="aset_font_smallcaps"),
+                ]])
+            )
         elif action == "aset_font_smallcaps":
             s = load_settings(uid)
             s["font_style"] = "smallcaps"
             save_settings(uid, s)
-            kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("NORMAL", callback_data="aset_font_normal"),
-                InlineKeyboardButton("✅ SMALL CAPS", callback_data="aset_font_smallcaps"),
-            ]])
             await query.answer("SMALL CAPS ✅", show_alert=True)
-            await query.message.edit_text("🔤 **Font Style**\n\nCurrent: `smallcaps`", reply_markup=kb)
-
+            await query.message.edit_text(
+                "🔤 Font\nCurrent: `smallcaps`",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("NORMAL", callback_data="aset_font_normal"),
+                    InlineKeyboardButton("✅ SMALL CAPS", callback_data="aset_font_smallcaps"),
+                ]])
+            )
         elif action == "aset_reset":
             save_settings(uid, DEFAULT_SETTINGS.copy())
             await query.answer("Reset ✅", show_alert=True)
-
         else:
             await query.answer()
-
     except Exception as e:
-        print("ASET ERR:", e)
+        print("ASET", e)
         try:
             await query.answer("Error", show_alert=True)
         except Exception:
@@ -1007,17 +904,17 @@ async def anime_settings_input(client: Client, message: Message):
         s["caption_template"] = "" if text.lower() == "default" else text
         save_settings(uid, s)
         ANIME_STATE.pop(uid, None)
-        await message.reply_text("✅ Anime caption save!\nAb `/anime name` maaro.")
+        await message.reply_text("✅ Anime caption save!")
     elif state == "wait_audio":
         s["audio"] = text
         save_settings(uid, s)
         ANIME_STATE.pop(uid, None)
-        await message.reply_text(f"✅ Audio: `{text}`")
+        await message.reply_text(f"✅ `{text}`")
     elif state == "wait_pixels":
         s["pixels"] = text
         save_settings(uid, s)
         ANIME_STATE.pop(uid, None)
-        await message.reply_text(f"✅ Quality: `{text}`")
+        await message.reply_text(f"✅ `{text}`")
     elif state == "wait_buttons":
         if text.lower() == "clear":
             s["buttons"] = []
@@ -1025,18 +922,17 @@ async def anime_settings_input(client: Client, message: Message):
             buttons = []
             for line in text.splitlines():
                 if " - " in line:
-                    parts = line.split(" - ", 1)
-                    if len(parts) == 2 and parts[1].strip().startswith("http"):
-                        buttons.append({"text": parts[0].strip(), "url": parts[1].strip()})
+                    a, b = line.split(" - ", 1)
+                    if b.strip().startswith("http"):
+                        buttons.append({"text": a.strip(), "url": b.strip()})
             s["buttons"] = buttons
         save_settings(uid, s)
         ANIME_STATE.pop(uid, None)
-        await message.reply_text(f"✅ {len(s['buttons'])} buttons save!")
+        await message.reply_text(f"✅ {len(s['buttons'])} buttons")
 
 
 @Client.on_message(filters.command("anicancel") & (filters.private | filters.group))
 async def anime_cancel(_, message: Message):
-    if not message.from_user:
-        return
-    ANIME_STATE.pop(message.from_user.id, None)
-    await message.reply_text("✅ Anime state cleared.")
+    if message.from_user:
+        ANIME_STATE.pop(message.from_user.id, None)
+    await message.reply_text("✅ Cleared.")
