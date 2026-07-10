@@ -50,17 +50,6 @@ DEFAULT_SETTINGS = {
     "pixels": "480p | 720p | 1080p",
     "buttons": [],
     "font_style": "normal",
-    "caption_template": """{title} ({year})
-╭───────────────────
- ➥ Status: {status}
- ➥ Episodes: {episodes}
- ➥ Ratings: {rating} IMDb
- ➥ Pixels: {pixels}
- ➥ Audio: {audio}
-├───────────────────
- ➥ Genres: {genres}
-╰───────────────────
-≡ {story}"""
 }
 
 FONT_FILES = {
@@ -385,54 +374,62 @@ def fresh_photo(bio: BytesIO) -> BytesIO:
 
 
 def build_caption(info, settings):
-    template = settings.get("caption_template", DEFAULT_SETTINGS["caption_template"])
+    """
+    Screenshot style:
+    Title box upar
+    Story neeche Telegram Quote me with ≡
+    """
     font_style = settings.get("font_style", "normal")
 
-    raw = {
-        "title": str(info.get("title", "Unknown")),
-        "year": str(info.get("year", "N/A")),
-        "status": str(info.get("status", "—")),
-        "episodes": str(info.get("episodes", "—")),
-        "rating": str(info.get("rating", "N/A")),
-        "pixels": str(settings.get("pixels", "480p | 720p | 1080p")),
-        "audio": str(settings.get("audio", "Hindi")),
-        "genres": str(info.get("genres", "—")),
-        "story": str(info.get("story", "No overview available.")),
-    }
+    title = str(info.get("title", "Unknown"))
+    year = str(info.get("year", "N/A"))
+    seasons = info.get("seasons")
+    status = str(info.get("status", "—"))
+    episodes = str(info.get("episodes", "—"))
+    rating = str(info.get("rating", "N/A"))
+    pixels = str(settings.get("pixels", "480p | 720p | 1080p"))
+    audio = str(settings.get("audio", "Hindi"))
+    genres = str(info.get("genres", "—"))
+    story = str(info.get("story", "No overview available."))
+    media_type = info.get("media_type", "movie")
 
-    if "{story}" in template:
-        head = template.split("{story}")[0].rstrip()
-        head = head.rstrip("≡").rstrip("─").rstrip()
-        if head.endswith("≡"):
-            head = head[:-1].rstrip()
+    if media_type == "tv" and seasons:
+        head_title = f"{title} (S{seasons}) ({year})"
     else:
-        head = template
+        head_title = f"{title} ({year})"
 
-    try:
-        head_fmt = head.format(**{**raw, "story": ""})
-    except Exception:
-        head_fmt = head
+    if media_type == "tv":
+        head = (
+            f"{head_title}\n"
+            f"╭───────────────────\n"
+            f" ➔ Status: {status}\n"
+            f" ➔ Episodes: {episodes}\n"
+            f" ➔ Ratings: {rating} IMDb\n"
+            f" ➔ Pixels: {pixels}\n"
+            f" ➔ Audio: {audio}\n"
+            f"├───────────────────\n"
+            f" ➔ Genres: {genres}\n"
+            f"╰───────────────────"
+        )
+    else:
+        head = (
+            f"{head_title}\n"
+            f"╭───────────────────\n"
+            f" ➔ Ratings: {rating} IMDb\n"
+            f" ➔ Pixels: {pixels}\n"
+            f" ➔ Audio: {audio}\n"
+            f"├───────────────────\n"
+            f" ➔ Genres: {genres}\n"
+            f"╰───────────────────"
+        )
 
-    if info.get("media_type") == "movie":
-        lines = []
-        for line in head_fmt.splitlines():
-            if "Status:" in line or "Episodes:" in line:
-                continue
-            lines.append(line)
-        head_fmt = "\n".join(lines).rstrip()
-
-    story = raw["story"]
     if font_style == "smallcaps":
-        head_fmt = to_small_caps(head_fmt)
-        story = to_small_caps(story)
+        head = to_small_caps(head)
+        story_txt = to_small_caps(f"≡ {story}")
+    else:
+        story_txt = f"≡ {story}"
 
-    head_esc = html.escape(head_fmt)
-    story_esc = html.escape(story)
-
-    # Final story style:
-    # ────
-    # ≡ story...
-    return f"{head_esc}\n────\n≡ {story_esc}"
+    return f"{html.escape(head)}\n<blockquote>{html.escape(story_txt)}</blockquote>"
 
 
 def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=False):
@@ -536,13 +533,15 @@ async def post_cmd(client: Client, message: Message):
                 status = details.get("status", "—")
                 eps = details.get("number_of_episodes")
                 episodes = f"{eps}+" if eps else "—"
+                seasons = details.get("number_of_seasons")
             else:
                 status = "—"
                 episodes = "—"
+                seasons = None
 
             story = (details.get("overview") or "No overview available.").strip()
-            if len(story) > 230:
-                story = story[:227] + "..."
+            if len(story) > 300:
+                story = story[:297] + "..."
 
             info = {
                 "title": get_title(details),
@@ -551,6 +550,7 @@ async def post_cmd(client: Client, message: Message):
                 "genres": genres,
                 "status": status,
                 "episodes": episodes,
+                "seasons": seasons,
                 "story": story,
                 "media_type": media_type,
             }
@@ -786,14 +786,13 @@ async def settings_cmd(client: Client, message: Message):
     )
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📝 CAPTION", callback_data="set_caption"),
             InlineKeyboardButton("🎧 AUDIO", callback_data="set_audio"),
+            InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
         ],
         [
-            InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
             InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
+            InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font"),
         ],
-        [InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font")],
         [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")],
     ])
     await message.reply_text(text, reply_markup=kb)
@@ -805,16 +804,7 @@ async def settings_cb(client: Client, query: CallbackQuery):
         action = query.data
         uid = query.from_user.id
 
-        if action == "set_caption":
-            USER_STATE[uid] = "wait_caption"
-            await query.answer()
-            await query.message.reply_text(
-                "📝 Caption template bhej.\n"
-                "`{title} {year} {status} {episodes} {rating} {pixels} {audio} {genres} {story}`\n"
-                "Story auto:\n────\n≡ story\n/cancel"
-            )
-
-        elif action == "set_audio":
+        if action == "set_audio":
             USER_STATE[uid] = "wait_audio"
             await query.answer()
             await query.message.reply_text("🎧 Audio bhej\n/cancel")
@@ -907,12 +897,7 @@ async def settings_input(client: Client, message: Message):
     text = message.text.strip()
     s = load_settings()
 
-    if state == "wait_caption":
-        s["caption_template"] = text
-        save_settings(s)
-        USER_STATE.pop(uid, None)
-        await message.reply_text("✅ Caption save!")
-    elif state == "wait_audio":
+    if state == "wait_audio":
         s["audio"] = text
         save_settings(s)
         USER_STATE.pop(uid, None)
