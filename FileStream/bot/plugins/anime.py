@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 import html
+import math
 import aiohttp
 import urllib.request
 from io import BytesIO
@@ -168,7 +169,13 @@ def tmdb_img_url(path):
 
 
 def get_title(item):
-    return item.get("title") or item.get("name") or item.get("original_title") or item.get("original_name") or "Unknown"
+    return (
+        item.get("title")
+        or item.get("name")
+        or item.get("original_title")
+        or item.get("original_name")
+        or "Unknown"
+    )
 
 
 def get_year(item):
@@ -177,7 +184,10 @@ def get_year(item):
 
 
 async def search_tmdb(session, query):
-    async with session.get(f"{TMDB_BASE}/search/multi", params={"api_key": TMDB_API, "query": query}) as resp:
+    async with session.get(
+        f"{TMDB_BASE}/search/multi",
+        params={"api_key": TMDB_API, "query": query}
+    ) as resp:
         return await resp.json()
 
 
@@ -201,7 +211,9 @@ def select_anime(results, year=None):
     filtered = [x for x in results if x.get("media_type") in ("movie", "tv")]
     if not filtered:
         return None
-    pool = [x for x in filtered if x.get("media_type") == "tv"] + [x for x in filtered if x.get("media_type") == "movie"]
+    pool = [x for x in filtered if x.get("media_type") == "tv"] + [
+        x for x in filtered if x.get("media_type") == "movie"
+    ]
     if year:
         for x in pool:
             d = x.get("release_date") or x.get("first_air_date") or ""
@@ -236,21 +248,67 @@ def wrap_text(text, font, max_width, draw):
     return lines
 
 
-def draw_stars(draw, x, y, rating_10, font):
-    """rating 0-10 -> 5 stars, no extra star symbol text"""
-    filled = int(round((float(rating_10) if rating_10 not in ("N/A", None, "") else 0) / 2.0))
+def cover_crop(img, tw, th):
+    """center crop, no stretch"""
+    iw, ih = img.size
+    scale = max(tw / iw, th / ih)
+    nw, nh = int(iw * scale), int(ih * scale)
+    img = img.resize((nw, nh), Image.LANCZOS)
+    left = (nw - tw) // 2
+    top = (nh - th) // 2
+    return img.crop((left, top, left + tw, top + th))
+
+
+def draw_star(draw, cx, cy, r, fill, outline=None):
+    pts = []
+    for i in range(10):
+        ang = math.radians(-90 + i * 36)
+        rad = r if i % 2 == 0 else r * 0.45
+        pts.append((cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
+    draw.polygon(pts, fill=fill, outline=outline)
+
+
+def draw_rating_stars(draw, x, y, rating_10, size=10, gap=17):
+    try:
+        val = float(rating_10)
+    except Exception:
+        val = 0.0
+    filled = int(round(val / 2.0))
     filled = max(0, min(5, filled))
-    stars = "★" * filled + "☆" * (5 - filled)
-    draw.text((x, y), stars, font=font, fill=(255, 190, 40, 255))
-    return int(draw.textlength(stars, font=font))
+    for i in range(5):
+        cx = x + i * gap + size
+        cy = y + size
+        if i < filled:
+            draw_star(draw, cx, cy, size, fill=(255, 185, 30), outline=(230, 150, 10))
+        else:
+            draw_star(draw, cx, cy, size, fill=(230, 230, 235), outline=(200, 200, 210))
+    return 5 * gap
+
+
+def draw_bookmark_icon(draw, box, color=(20, 20, 25)):
+    x1, y1, x2, y2 = box
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    draw.ellipse([x1, y1, x2, y2], outline=color, width=3)
+    bw, bh = 14, 20
+    bx1 = cx - bw / 2
+    by1 = cy - bh / 2 + 1
+    bx2 = cx + bw / 2
+    by2 = cy + bh / 2
+    draw.polygon([
+        (bx1, by1),
+        (bx2, by1),
+        (bx2, by2),
+        (cx, by2 - 7),
+        (bx1, by2),
+    ], fill=color)
 
 
 def generate_anime_poster(base_img, info):
     """
-    Split card like screenshot:
-    LEFT = art
-    RIGHT = white clean panel
-    NO branding, NO colour theme buttons needed
+    Split card:
+    LEFT art | RIGHT white panel
+    NO branding, NO colour buttons
     """
     W, H = 1280, 720
     LEFT_W = 620
@@ -258,30 +316,26 @@ def generate_anime_poster(base_img, info):
 
     canvas = Image.new("RGB", (W, H), (255, 255, 255))
 
-    # left art cover
-    art = base_img.copy().resize((LEFT_W, H), Image.LANCZOS)
-    art = ImageEnhance.Brightness(art).enhance(0.95)
-    art = ImageEnhance.Contrast(art).enhance(1.05)
+    art = cover_crop(base_img.convert("RGB"), LEFT_W, H)
+    art = ImageEnhance.Brightness(art).enhance(0.96)
+    art = ImageEnhance.Contrast(art).enhance(1.06)
     canvas.paste(art, (0, 0))
 
-    # soft left bottom fade on art
     art_rgba = art.convert("RGBA")
     fade = Image.new("RGBA", (LEFT_W, H), (0, 0, 0, 0))
     fd = ImageDraw.Draw(fade)
-    for y in range(H - 140, H):
-        a = int(90 * ((y - (H - 140)) / 140))
+    for y in range(H - 120, H):
+        a = int(80 * ((y - (H - 120)) / 120))
         fd.line([(0, y), (LEFT_W, y)], fill=(0, 0, 0, a))
-    art_rgba = Image.alpha_composite(art_rgba, fade)
-    canvas.paste(art_rgba.convert("RGB"), (0, 0))
+    canvas.paste(Image.alpha_composite(art_rgba, fade).convert("RGB"), (0, 0))
 
     draw = ImageDraw.Draw(canvas)
 
-    f_title = get_font(58, bold=True)
-    f_chip = get_font(16, semi=True)
-    f_body = get_font(18)
-    f_small = get_font(17, semi=True)
-    f_btn = get_font(18, bold=True)
-    f_star = get_font(20, bold=True)
+    f_title = get_font(56, bold=True)
+    f_chip = get_font(15, semi=True)
+    f_body = get_font(17)
+    f_small = get_font(16, semi=True)
+    f_btn = get_font(17, bold=True)
 
     title = str(info.get("title", "Unknown")).upper()
     rating = info.get("rating", "N/A")
@@ -289,59 +343,59 @@ def generate_anime_poster(base_img, info):
         rating_f = float(rating)
     except Exception:
         rating_f = 0.0
-    genres = [g.strip() for g in str(info.get("genres", "")).split(",") if g.strip()][:3]
+
+    genres = [g.strip() for g in str(info.get("genres", "")).split(",") if g.strip()]
+    clean_g = []
+    for g in genres:
+        g2 = (
+            g.replace("Action & Adventure", "Action")
+             .replace("Sci-Fi & Fantasy", "Fantasy")
+             .replace("Science Fiction", "Sci-Fi")
+        )
+        clean_g.append(g2)
+    genres = clean_g[:2]
+
     story = str(info.get("story", "No overview available."))
 
-    rx = LEFT_W + 48  # right panel content x
-    max_text_w = RIGHT_W - 96
+    rx = LEFT_W + 50
+    max_text_w = RIGHT_W - 100
 
-    # TITLE
-    y = 110
+    y = 105
     t_lines = wrap_text(title, f_title, max_text_w, draw)[:2]
     for i, line in enumerate(t_lines):
-        draw.text((rx, y + i * 62), line, font=f_title, fill=(18, 18, 22))
-    y += len(t_lines) * 62 + 22
+        draw.text((rx, y + i * 60), line, font=f_title, fill=(15, 15, 20))
+    y += len(t_lines) * 60 + 20
 
-    # genre pills
-    px = rx
-    py = y
-    for g in genres[:2]:
-        label = f"  {g}  "
-        gw = int(draw.textlength(label, font=f_chip)) + 10
-        draw.rounded_rectangle([px, py, px + gw, py + 30], radius=15, outline=(210, 210, 215), width=2)
-        draw.text((px + 8, py + 6), g, font=f_chip, fill=(60, 60, 70))
+    px, py = rx, y
+    for g in genres:
+        gw = int(draw.textlength(g, font=f_chip)) + 24
+        draw.rounded_rectangle([px, py, px + gw, py + 28], radius=14, outline=(215, 215, 220), width=2)
+        draw.text((px + 12, py + 5), g, font=f_chip, fill=(55, 55, 65))
         px += gw + 10
 
-    # Avg Ratings + stars
-    ax = px + 12
-    draw.text((ax, py + 5), "Avg Ratings:", font=f_small, fill=(40, 40, 48))
-    star_x = ax + int(draw.textlength("Avg Ratings: ", font=f_small)) + 4
-    draw_stars(draw, star_x, py + 3, rating_f, f_star)
-    y = py + 55
+    ax = px + 14
+    draw.text((ax, py + 4), "Avg Ratings:", font=f_small, fill=(35, 35, 42))
+    star_x = ax + int(draw.textlength("Avg Ratings: ", font=f_small)) + 2
+    draw_rating_stars(draw, star_x, py + 3, rating_f, size=10, gap=17)
+    y = py + 52
 
-    # thin divider
-    draw.line([(rx, y), (W - 48, y)], fill=(230, 230, 235), width=2)
-    y += 28
+    draw.line([(rx, y), (W - 50, y)], fill=(232, 232, 236), width=2)
+    y += 26
 
-    # synopsis on card
-    syn_lines = wrap_text(story.upper(), f_body, max_text_w, draw)[:7]
+    syn_lines = wrap_text(story.upper(), f_body, max_text_w, draw)[:6]
     for i, line in enumerate(syn_lines):
-        draw.text((rx, y + i * 28), line, font=f_body, fill=(110, 115, 125))
-    y += len(syn_lines) * 28 + 40
+        draw.text((rx, y + i * 27), line, font=f_body, fill=(115, 118, 128))
+    y += max(len(syn_lines), 1) * 27 + 38
 
-    # WATCH NOW button (black/red style like screenshot, no branding)
-    btn_w, btn_h = 190, 48
-    by = min(y, H - 100)
-    draw.rounded_rectangle([rx, by, rx + btn_w, by + btn_h], radius=24, fill=(15, 15, 18))
-    # red NOW accent feel
-    draw.text((rx + 28, by + 13), "WATCH ", font=f_btn, fill=(255, 255, 255))
+    btn_w, btn_h = 188, 48
+    by = min(y, H - 105)
+    draw.rounded_rectangle([rx, by, rx + btn_w, by + btn_h], radius=24, fill=(12, 12, 16))
+    draw.text((rx + 30, by + 13), "WATCH ", font=f_btn, fill=(255, 255, 255))
     nw = int(draw.textlength("WATCH ", font=f_btn))
-    draw.text((rx + 28 + nw, by + 13), "NOW", font=f_btn, fill=(255, 55, 70))
+    draw.text((rx + 30 + nw, by + 13), "NOW", font=f_btn, fill=(255, 55, 70))
 
-    # bookmark circle
-    bx = rx + btn_w + 16
-    draw.ellipse([bx, by, bx + btn_h, by + btn_h], outline=(30, 30, 35), width=3)
-    draw.text((bx + 15, by + 12), "🔖", font=f_btn, fill=(30, 30, 35))
+    bx1 = rx + btn_w + 16
+    draw_bookmark_icon(draw, (bx1, by, bx1 + btn_h, by + btn_h), color=(20, 20, 25))
 
     bio = BytesIO()
     canvas.save(bio, format="JPEG", quality=95)
@@ -351,8 +405,7 @@ def generate_anime_poster(base_img, info):
 
 
 def make_clean_image(base_img):
-    # clean = full art only 16:9
-    img = base_img.copy().resize((1280, 720), Image.LANCZOS)
+    img = cover_crop(base_img.convert("RGB"), 1280, 720)
     bio = BytesIO()
     img.save(bio, format="JPEG", quality=95)
     bio.seek(0)
@@ -430,15 +483,12 @@ def build_caption(info, settings):
     if font_style == "smallcaps":
         caption = to_small_caps(caption)
 
-    # SYNOPSIS block -> quote
-    # find synopsis body after ‣ SYNOPSIS / ➟
     if "‣ SYNOPSIS" in caption:
         head, rest = caption.split("‣ SYNOPSIS", 1)
         head = head.rstrip()
         body = rest.strip()
         if body.startswith("➟"):
             body = body[1:].strip()
-        # keep header outside, full synopsis in quote
         return (
             f"{html.escape(head)}\n"
             f"‣ <b>SYNOPSIS</b>\n"
@@ -453,7 +503,6 @@ def build_caption(info, settings):
 
 
 def build_anime_keyboard(token, page, total, clean_mode=False):
-    # NO colour buttons
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("⟨ Prev", callback_data=f"anipage|{token}|{page-1}"))
@@ -464,7 +513,10 @@ def build_anime_keyboard(token, page, total, clean_mode=False):
     return InlineKeyboardMarkup([
         nav,
         [
-            InlineKeyboardButton("🖼 Clean Art" if not clean_mode else "🎴 Card Art", callback_data=f"aniclean|{token}"),
+            InlineKeyboardButton(
+                "🖼 Clean Art" if not clean_mode else "🎴 Card Art",
+                callback_data=f"aniclean|{token}"
+            ),
             InlineKeyboardButton("✅ Use This", callback_data=f"aniuse|{token}"),
         ],
         [InlineKeyboardButton("❌ Close", callback_data=f"aniclear|{token}")],
@@ -516,7 +568,6 @@ async def anime_cmd(client: Client, message: Message):
             images_data = await get_images(session, media_type, media_id)
 
             posters = []
-            # prefer landscape for left art, else poster
             if details.get("backdrop_path"):
                 posters.append(tmdb_img_url(details["backdrop_path"]))
             for p in images_data.get("backdrops", [])[:15]:
@@ -526,7 +577,7 @@ async def anime_cmd(client: Client, message: Message):
                 url = tmdb_img_url(p.get("file_path"))
                 if url and url not in posters:
                     posters.append(url)
-            for p in images_data.get("posters", [])[:8]:
+            for p in images_data.get("posters", [])[:10]:
                 url = tmdb_img_url(p.get("file_path"))
                 if url and url not in posters:
                     posters.append(url)
@@ -541,9 +592,12 @@ async def anime_cmd(client: Client, message: Message):
 
             if media_type == "tv":
                 status_raw = details.get("status") or "—"
-                status = "Finished" if status_raw in ("Ended", "Canceled") else (
-                    "Returning" if "Returning" in status_raw else status_raw
-                )
+                if status_raw in ("Ended", "Canceled"):
+                    status = "Finished"
+                elif "Returning" in status_raw:
+                    status = "Returning"
+                else:
+                    status = status_raw
                 eps = details.get("number_of_episodes")
                 episodes = str(eps) if eps else "—"
                 seasons = details.get("number_of_seasons")
@@ -696,7 +750,9 @@ async def ani_use(client: Client, query: CallbackQuery):
         if not data or query.from_user.id != data["user_id"]:
             await query.answer("Not yours", show_alert=True)
             raise StopPropagation
-        await query.message.edit_reply_markup(reply_markup=build_url_buttons(load_settings(data["user_id"])))
+        await query.message.edit_reply_markup(
+            reply_markup=build_url_buttons(load_settings(data["user_id"]))
+        )
         await query.answer("✅ Done")
     except StopPropagation:
         raise
@@ -758,10 +814,14 @@ async def anime_settings_cmd(client: Client, message: Message):
         f"🔗 Buttons: `{len(s.get('buttons', []))}`"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 CAPTION", callback_data="aset_caption"),
-         InlineKeyboardButton("🎧 AUDIO", callback_data="aset_audio")],
-        [InlineKeyboardButton("📺 QUALITY", callback_data="aset_pixels"),
-         InlineKeyboardButton("🔗 BUTTONS", callback_data="aset_buttons")],
+        [
+            InlineKeyboardButton("📝 CAPTION", callback_data="aset_caption"),
+            InlineKeyboardButton("🎧 AUDIO", callback_data="aset_audio"),
+        ],
+        [
+            InlineKeyboardButton("📺 QUALITY", callback_data="aset_pixels"),
+            InlineKeyboardButton("🔗 BUTTONS", callback_data="aset_buttons"),
+        ],
         [InlineKeyboardButton("🔤 FONT", callback_data="aset_font")],
         [InlineKeyboardButton("↺ RESET", callback_data="aset_reset")],
     ])
