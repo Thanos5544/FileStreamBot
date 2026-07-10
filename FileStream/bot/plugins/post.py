@@ -50,6 +50,7 @@ DEFAULT_SETTINGS = {
     "pixels": "480p | 720p | 1080p",
     "buttons": [],
     "font_style": "normal",
+    "caption_template": "",  # empty = use built-in format
 }
 
 FONT_FILES = {
@@ -199,15 +200,21 @@ async def get_images(session, media_type, media_id):
 
 
 def select_best(results, year=None):
+    """TV pehle prefer karo taaki Status/Episodes aaye"""
     filtered = [x for x in results if x.get("media_type") in ("movie", "tv")]
     if not filtered:
         return None
+
+    tv = [x for x in filtered if x.get("media_type") == "tv"]
+    movies = [x for x in filtered if x.get("media_type") == "movie"]
+    pool = tv + movies  # TV first
+
     if year:
-        for x in filtered:
+        for x in pool:
             d = x.get("release_date") or x.get("first_air_date") or ""
             if d.startswith(year):
                 return x
-    return filtered[0]
+    return pool[0]
 
 
 async def download_image(session, url):
@@ -373,9 +380,8 @@ def fresh_photo(bio: BytesIO) -> BytesIO:
     return out
 
 
-def build_caption(info, settings):
-    font_style = settings.get("font_style", "normal")
-
+def build_default_caption(info, settings):
+    """Built-in format with Status + Episodes for TV"""
     title = str(info.get("title", "Unknown"))
     year = str(info.get("year", "N/A"))
     seasons = info.get("seasons")
@@ -388,12 +394,12 @@ def build_caption(info, settings):
     story = str(info.get("story", "No overview available."))
     media_type = info.get("media_type", "movie")
 
-    # Exact: The Witcher  (S4) (2019)
     if media_type == "tv" and seasons:
         head_title = f"{title}  (S{seasons}) ({year})"
     else:
         head_title = f"{title} ({year})"
 
+    # TV = Status + Episodes ALWAYS
     if media_type == "tv":
         head = (
             f"{head_title}\n"
@@ -418,15 +424,48 @@ def build_caption(info, settings):
             f" ➥ Genres: {genres}\n"
             f"╰───────────────────"
         )
+    return head, story
+
+
+def build_caption(info, settings):
+    font_style = settings.get("font_style", "normal")
+    custom = (settings.get("caption_template") or "").strip()
+
+    # custom template if user set
+    if custom and "{title}" in custom:
+        raw = {
+            "title": str(info.get("title", "Unknown")),
+            "year": str(info.get("year", "N/A")),
+            "status": str(info.get("status", "—")),
+            "episodes": str(info.get("episodes", "—")),
+            "seasons": str(info.get("seasons") or ""),
+            "rating": str(info.get("rating", "N/A")),
+            "pixels": str(settings.get("pixels", "480p | 720p | 1080p")),
+            "audio": str(settings.get("audio", "Hindi")),
+            "genres": str(info.get("genres", "—")),
+            "story": str(info.get("story", "No overview available.")),
+        }
+        try:
+            if "{story}" in custom:
+                head = custom.split("{story}")[0].rstrip()
+                head = head.rstrip("≡").rstrip()
+                head_fmt = head.format(**{**raw, "story": ""})
+                story = raw["story"]
+            else:
+                head_fmt = custom.format(**raw)
+                story = raw["story"]
+        except Exception:
+            head_fmt, story = build_default_caption(info, settings)
+    else:
+        head_fmt, story = build_default_caption(info, settings)
 
     if font_style == "smallcaps":
-        head = to_small_caps(head)
+        head_fmt = to_small_caps(head_fmt)
         story_line = to_small_caps(f"≡ {story}")
     else:
         story_line = f"≡ {story}"
 
-    # upar box, neeche story Quote me
-    return f"{html.escape(head)}\n<blockquote>{html.escape(story_line)}</blockquote>"
+    return f"{html.escape(head_fmt)}\n<blockquote>{html.escape(story_line)}</blockquote>"
 
 
 def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=False):
@@ -526,8 +565,14 @@ async def post_cmd(client: Client, message: Message):
             rating = details.get("vote_average")
             rating = f"{rating:.1f}" if rating else "N/A"
 
+            # TV details - Status + Episodes + Seasons
             if media_type == "tv":
-                status = details.get("status", "—")
+                status_raw = details.get("status") or "—"
+                # Returning Series -> Returning
+                if "Returning" in status_raw:
+                    status = "Returning"
+                else:
+                    status = status_raw
                 eps = details.get("number_of_episodes")
                 episodes = f"{eps}+" if eps else "—"
                 seasons = details.get("number_of_seasons")
@@ -551,6 +596,8 @@ async def post_cmd(client: Client, message: Message):
                 "story": story,
                 "media_type": media_type,
             }
+
+            print("POST INFO:", media_type, info.get("title"), "S", seasons, "E", episodes, "ST", status)
 
             base = await download_image(session, posters[0])
             if not base:
@@ -774,22 +821,26 @@ async def post_noop(_, query: CallbackQuery):
 @Client.on_message(filters.command("settings") & filters.private)
 async def settings_cmd(client: Client, message: Message):
     s = load_settings()
+    custom = (s.get("caption_template") or "").strip()
+    cap_status = "Custom" if custom else "Default"
     text = (
         "⚙️ **POST SETTINGS**\n\n"
         f"🎧 **Audio:** `{s.get('audio')}`\n"
         f"📺 **Pixels:** `{s.get('pixels')}`\n"
         f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
+        f"📝 **Caption:** `{cap_status}`\n"
         f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`"
     )
     kb = InlineKeyboardMarkup([
         [
+            InlineKeyboardButton("📝 CAPTION", callback_data="set_caption"),
             InlineKeyboardButton("🎧 AUDIO", callback_data="set_audio"),
-            InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
         ],
         [
+            InlineKeyboardButton("📺 PIXELS", callback_data="set_pixels"),
             InlineKeyboardButton("🔘 BUTTONS", callback_data="set_buttons"),
-            InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font"),
         ],
+        [InlineKeyboardButton("🔤 FONT STYLE", callback_data="set_font")],
         [InlineKeyboardButton("🔄 RESET DEFAULT", callback_data="set_reset")],
     ])
     await message.reply_text(text, reply_markup=kb)
@@ -801,10 +852,35 @@ async def settings_cb(client: Client, query: CallbackQuery):
         action = query.data
         uid = query.from_user.id
 
-        if action == "set_audio":
+        if action == "set_caption":
+            USER_STATE[uid] = "wait_caption"
+            await query.answer()
+            await query.message.reply_text(
+                "📝 **Caption template** bhej.\n\n"
+                "Placeholders:\n"
+                "`{title} {year} {status} {episodes} {seasons} {rating} {pixels} {audio} {genres} {story}`\n\n"
+                "Example:\n"
+                "```\n"
+                "{title}  (S{seasons}) ({year})\n"
+                "╭───────────────────\n"
+                " ➥ Status: {status}\n"
+                " ➥ Episodes: {episodes}\n"
+                " ➥ Ratings: {rating} IMDb\n"
+                " ➥ Pixels: {pixels}\n"
+                " ➥ Audio: {audio}\n"
+                "├───────────────────\n"
+                " ➥ Genres: {genres}\n"
+                "╰───────────────────\n"
+                "≡ {story}\n"
+                "```\n\n"
+                "Default wapas: `default`\n"
+                "/cancel"
+            )
+
+        elif action == "set_audio":
             USER_STATE[uid] = "wait_audio"
             await query.answer()
-            await query.message.reply_text("🎧 Audio bhej\n/cancel")
+            await query.message.reply_text("🎧 Audio bhej\nExample: Hindi / English\n/cancel")
 
         elif action == "set_pixels":
             USER_STATE[uid] = "wait_pixels"
@@ -894,7 +970,15 @@ async def settings_input(client: Client, message: Message):
     text = message.text.strip()
     s = load_settings()
 
-    if state == "wait_audio":
+    if state == "wait_caption":
+        if text.lower() == "default":
+            s["caption_template"] = ""
+        else:
+            s["caption_template"] = text
+        save_settings(s)
+        USER_STATE.pop(uid, None)
+        await message.reply_text("✅ Caption save!")
+    elif state == "wait_audio":
         s["audio"] = text
         save_settings(s)
         USER_STATE.pop(uid, None)
