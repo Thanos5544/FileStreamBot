@@ -1,12 +1,5 @@
 FROM python:3.11
 
-# Install FFmpeg and fonts for image processing
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    fonts-dejavu \
-    fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 COPY . /app
 
