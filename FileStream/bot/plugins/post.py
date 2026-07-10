@@ -374,11 +374,6 @@ def fresh_photo(bio: BytesIO) -> BytesIO:
 
 
 def build_caption(info, settings):
-    """
-    Screenshot style:
-    Title box upar
-    Story neeche Telegram Quote me with ≡
-    """
     font_style = settings.get("font_style", "normal")
 
     title = str(info.get("title", "Unknown"))
@@ -393,8 +388,9 @@ def build_caption(info, settings):
     story = str(info.get("story", "No overview available."))
     media_type = info.get("media_type", "movie")
 
+    # Exact: The Witcher  (S4) (2019)
     if media_type == "tv" and seasons:
-        head_title = f"{title} (S{seasons}) ({year})"
+        head_title = f"{title}  (S{seasons}) ({year})"
     else:
         head_title = f"{title} ({year})"
 
@@ -402,34 +398,35 @@ def build_caption(info, settings):
         head = (
             f"{head_title}\n"
             f"╭───────────────────\n"
-            f" ➔ Status: {status}\n"
-            f" ➔ Episodes: {episodes}\n"
-            f" ➔ Ratings: {rating} IMDb\n"
-            f" ➔ Pixels: {pixels}\n"
-            f" ➔ Audio: {audio}\n"
+            f" ➥ Status: {status}\n"
+            f" ➥ Episodes: {episodes}\n"
+            f" ➥ Ratings: {rating} IMDb\n"
+            f" ➥ Pixels: {pixels}\n"
+            f" ➥ Audio: {audio}\n"
             f"├───────────────────\n"
-            f" ➔ Genres: {genres}\n"
+            f" ➥ Genres: {genres}\n"
             f"╰───────────────────"
         )
     else:
         head = (
             f"{head_title}\n"
             f"╭───────────────────\n"
-            f" ➔ Ratings: {rating} IMDb\n"
-            f" ➔ Pixels: {pixels}\n"
-            f" ➔ Audio: {audio}\n"
+            f" ➥ Ratings: {rating} IMDb\n"
+            f" ➥ Pixels: {pixels}\n"
+            f" ➥ Audio: {audio}\n"
             f"├───────────────────\n"
-            f" ➔ Genres: {genres}\n"
+            f" ➥ Genres: {genres}\n"
             f"╰───────────────────"
         )
 
     if font_style == "smallcaps":
         head = to_small_caps(head)
-        story_txt = to_small_caps(f"≡ {story}")
+        story_line = to_small_caps(f"≡ {story}")
     else:
-        story_txt = f"≡ {story}"
+        story_line = f"≡ {story}"
 
-    return f"{html.escape(head)}\n<blockquote>{html.escape(story_txt)}</blockquote>"
+    # upar box, neeche story Quote me
+    return f"{html.escape(head)}\n<blockquote>{html.escape(story_line)}</blockquote>"
 
 
 def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=False):
