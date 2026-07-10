@@ -17,7 +17,7 @@ from pyrogram.types import (
     InlineKeyboardButton,
     InputMediaPhoto
 )
-from pyrogram.enums import ParseMode, ChatType
+from pyrogram.enums import ParseMode
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 
 TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
@@ -26,7 +26,7 @@ TMDB_IMG = "https://image.tmdb.org/t/p/original"
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
-SETTINGS_FILE = DATA_DIR / "post_settings.json"  # { "user_id": {settings...} }
+SETTINGS_FILE = DATA_DIR / "post_settings.json"
 FONT_DIR = Path("fonts")
 FONT_DIR.mkdir(exist_ok=True)
 
@@ -75,6 +75,18 @@ SMALL_CAPS = {
     "y": "ʏ", "z": "ᴢ",
 }
 
+CAPTION_EXAMPLE = """{title}  (S{seasons}) ({year})
+╭───────────────────
+ ➥ Status: {status}
+ ➥ Episodes: {episodes}
+ ➥ Ratings: {rating} IMDb
+ ➥ Pixels: {pixels}
+ ➥ Audio: {audio}
+├───────────────────
+ ➥ Genres: {genres}
+╰───────────────────
+≡ {story}"""
+
 
 def to_small_caps(text: str) -> str:
     out = []
@@ -95,7 +107,7 @@ def _read_all_settings():
             data = json.load(f)
         if not isinstance(data, dict):
             return {}
-        # old global format migrate skip (flat keys like audio)
+        # old global format ignore
         if "audio" in data and not any(str(k).isdigit() for k in data.keys()):
             return {}
         return data
@@ -104,14 +116,12 @@ def _read_all_settings():
 
 
 def load_settings(user_id: int):
-    """Har user ki alag settings"""
     all_data = _read_all_settings()
     user_data = all_data.get(str(user_id), {})
     if not isinstance(user_data, dict):
         user_data = {}
     out = DEFAULT_SETTINGS.copy()
     out.update(user_data)
-    # ensure keys
     for k, v in DEFAULT_SETTINGS.items():
         if k not in out:
             out[k] = v
@@ -119,7 +129,6 @@ def load_settings(user_id: int):
 
 
 def save_settings(user_id: int, data: dict):
-    """Sirf us user ki settings save"""
     all_data = _read_all_settings()
     all_data[str(user_id)] = data
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -595,7 +604,6 @@ async def post_cmd(client: Client, message: Message):
             if not base:
                 return await msg.edit_text("❌ Poster download fail.")
 
-            # THIS USER settings only
             settings = load_settings(user_id)
             photo = generate_poster(base, info, COLOURS["🟣"])
             caption = build_caption(info, settings)
@@ -656,7 +664,6 @@ async def render_and_edit(client, query, data, token):
         else:
             photo = generate_poster(base, data["info"], COLOURS[color])
 
-        # always latest settings of THIS user
         settings = load_settings(user_id)
         photo = fresh_photo(photo)
         caption = build_caption(data["info"], settings)
@@ -808,15 +815,16 @@ async def post_noop(_, query: CallbackQuery):
     raise StopPropagation
 
 
-# settings ONLY private + per user
-@Client.on_message(filters.command("settings") & filters.private)
+@Client.on_message(filters.command("settings") & (filters.private | filters.group))
 async def settings_cmd(client: Client, message: Message):
+    if not message.from_user:
+        return
     uid = message.from_user.id
     s = load_settings(uid)
     custom = (s.get("caption_template") or "").strip()
     cap_status = "Custom" if custom else "Default"
     text = (
-        "⚙️ **POST SETTINGS** (sirf tere liye)\n\n"
+        "⚙️ **POST SETTINGS** (sirf teri)\n\n"
         f"🎧 **Audio:** `{s.get('audio')}`\n"
         f"📺 **Pixels:** `{s.get('pixels')}`\n"
         f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
@@ -849,10 +857,14 @@ async def settings_cb(client: Client, query: CallbackQuery):
             USER_STATE[uid] = "wait_caption"
             await query.answer()
             await query.message.reply_text(
-                "📝 **Caption template** bhej (sirf teri settings).\n\n"
-                "Placeholders:\n"
+                "📝 **Apna caption template bhej** (sirf teri settings)\n\n"
+                "**Placeholders:**\n"
                 "`{title} {year} {status} {episodes} {seasons} {rating} {pixels} {audio} {genres} {story}`\n\n"
-                "Default: `default`\n/cancel"
+                "**Example (copy karke edit kar):**\n"
+                f"```\n{CAPTION_EXAMPLE}\n```\n\n"
+                "• Story auto Quote me aati hai\n"
+                "• Default wapas: `default` likh ke bhej\n"
+                "• Cancel: /cancel"
             )
 
         elif action == "set_audio":
@@ -929,9 +941,11 @@ async def settings_cb(client: Client, query: CallbackQuery):
     raise StopPropagation
 
 
-@Client.on_message(filters.private & filters.text, group=50)
+@Client.on_message((filters.private | filters.group) & filters.text, group=50)
 async def settings_input(client: Client, message: Message):
-    uid = message.from_user.id if message.from_user else 0
+    if not message.from_user:
+        return
+    uid = message.from_user.id
     state = USER_STATE.get(uid)
     if not state:
         return
@@ -972,7 +986,9 @@ async def settings_input(client: Client, message: Message):
         await message.reply_text(f"✅ Tere {len(s['buttons'])} buttons save!")
 
 
-@Client.on_message(filters.command("cancel") & filters.private)
+@Client.on_message(filters.command("cancel") & (filters.private | filters.group))
 async def cancel_state(_, message: Message):
+    if not message.from_user:
+        return
     USER_STATE.pop(message.from_user.id, None)
     await message.reply_text("✅ Cleared.")
