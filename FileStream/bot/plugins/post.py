@@ -107,7 +107,6 @@ def _read_all_settings():
             data = json.load(f)
         if not isinstance(data, dict):
             return {}
-        # old global format ignore
         if "audio" in data and not any(str(k).isdigit() for k in data.keys()):
             return {}
         return data
@@ -431,46 +430,56 @@ def build_default_caption(info, settings):
             f" ➥ Genres: {genres}\n"
             f"╰───────────────────"
         )
-    return head, story
+    return f"{head}\n≡ {story}"
 
 
 def build_caption(info, settings):
+    """
+    Full template support including {story}
+    Same in PM and Group
+    """
     font_style = settings.get("font_style", "normal")
     custom = (settings.get("caption_template") or "").strip()
 
-    if custom and "{title}" in custom:
-        raw = {
-            "title": str(info.get("title", "Unknown")),
-            "year": str(info.get("year", "N/A")),
-            "status": str(info.get("status", "—")),
-            "episodes": str(info.get("episodes", "—")),
-            "seasons": str(info.get("seasons") or ""),
-            "rating": str(info.get("rating", "N/A")),
-            "pixels": str(settings.get("pixels", "480p | 720p | 1080p")),
-            "audio": str(settings.get("audio", "Hindi")),
-            "genres": str(info.get("genres", "—")),
-            "story": str(info.get("story", "No overview available.")),
-        }
+    raw = {
+        "title": str(info.get("title", "Unknown")),
+        "year": str(info.get("year", "N/A")),
+        "status": str(info.get("status", "—")),
+        "episodes": str(info.get("episodes", "—")),
+        "seasons": str(info.get("seasons") or ""),
+        "rating": str(info.get("rating", "N/A")),
+        "pixels": str(settings.get("pixels", "480p | 720p | 1080p")),
+        "audio": str(settings.get("audio", "Hindi")),
+        "genres": str(info.get("genres", "—")),
+        "story": str(info.get("story", "No overview available.")),
+    }
+
+    media_type = info.get("media_type", "movie")
+
+    if custom:
         try:
-            if "{story}" in custom:
-                head = custom.split("{story}")[0].rstrip().rstrip("≡").rstrip()
-                head_fmt = head.format(**{**raw, "story": ""})
-                story = raw["story"]
-            else:
-                head_fmt = custom.format(**raw)
-                story = raw["story"]
-        except Exception:
-            head_fmt, story = build_default_caption(info, settings)
+            if media_type != "tv":
+                raw["seasons"] = ""
+            caption = custom.format(**raw)
+            caption = caption.replace("  (S) ", " ").replace("(S) ", "")
+            caption = re.sub(r"\n{3,}", "\n\n", caption).strip()
+        except Exception as e:
+            print("CAPTION FORMAT ERR:", e)
+            caption = build_default_caption(info, settings)
     else:
-        head_fmt, story = build_default_caption(info, settings)
+        caption = build_default_caption(info, settings)
 
     if font_style == "smallcaps":
-        head_fmt = to_small_caps(head_fmt)
-        story_line = to_small_caps(f"≡ {story}")
-    else:
-        story_line = f"≡ {story}"
+        caption = to_small_caps(caption)
 
-    return f"{html.escape(head_fmt)}\n<blockquote>{html.escape(story_line)}</blockquote>"
+    # ≡ story line -> Quote box (same PM + group)
+    if "≡" in caption:
+        head_part, story_part = caption.rsplit("≡", 1)
+        head_part = head_part.rstrip()
+        story_part = ("≡" + story_part).strip()
+        return f"{html.escape(head_part)}\n<blockquote>{html.escape(story_part)}</blockquote>"
+
+    return html.escape(caption)
 
 
 def build_post_keyboard(token, page, total, current_color="🟣", clean_mode=False):
@@ -604,6 +613,7 @@ async def post_cmd(client: Client, message: Message):
             if not base:
                 return await msg.edit_text("❌ Poster download fail.")
 
+            # user-specific settings (same PM + group)
             settings = load_settings(user_id)
             photo = generate_poster(base, info, COLOURS["🟣"])
             caption = build_caption(info, settings)
@@ -830,7 +840,7 @@ async def settings_cmd(client: Client, message: Message):
         f"🔤 **Font:** `{s.get('font_style', 'normal')}`\n"
         f"📝 **Caption:** `{cap_status}`\n"
         f"🔘 **Buttons:** `{len(s.get('buttons', []))} buttons`\n\n"
-        "_Har user ki settings alag save hoti hain._"
+        "_PM aur Group dono me same settings use hoti hain._"
     )
     kb = InlineKeyboardMarkup([
         [
@@ -860,10 +870,11 @@ async def settings_cb(client: Client, query: CallbackQuery):
                 "📝 **Apna caption template bhej** (sirf teri settings)\n\n"
                 "**Placeholders:**\n"
                 "`{title} {year} {status} {episodes} {seasons} {rating} {pixels} {audio} {genres} {story}`\n\n"
-                "**Example (copy karke edit kar):**\n"
+                "**Example (copy + edit):**\n"
                 f"```\n{CAPTION_EXAMPLE}\n```\n\n"
-                "• Story auto Quote me aati hai\n"
-                "• Default wapas: `default` likh ke bhej\n"
+                "• `{story}` se story control hoti hai (hata doge to story nahi aayegi)\n"
+                "• Story line `≡ {story}` Quote box me aati hai\n"
+                "• Default: `default`\n"
                 "• Cancel: /cancel"
             )
 
@@ -959,7 +970,10 @@ async def settings_input(client: Client, message: Message):
         s["caption_template"] = "" if text.lower() == "default" else text
         save_settings(uid, s)
         USER_STATE.pop(uid, None)
-        await message.reply_text("✅ Teri caption save!")
+        await message.reply_text(
+            "✅ Teri caption save!\n\n"
+            "Ab `/post name` maaro (PM ya Group) — same caption aayega."
+        )
     elif state == "wait_audio":
         s["audio"] = text
         save_settings(uid, s)
