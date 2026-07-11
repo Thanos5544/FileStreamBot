@@ -1,23 +1,30 @@
-from pyrogram import Client
+from pyrogram import filters
 from pyrogram.types import ChatMemberUpdated
 from pyrogram.enums import ChatMemberStatus
 
+from FileStream import FileStream
 from FileStream.config import Telegram
 from FileStream.utils.database import Database
 
 db = Database(Telegram.DATABASE_URL, Telegram.SESSION_NAME)
 
 
-@Client.on_my_chat_member()
-async def group_add_remove_logger(client: Client, member: ChatMemberUpdated):
+@FileStream.on_chat_member_updated()
+async def group_add_remove_logger(client, member: ChatMemberUpdated):
     chat = member.chat
 
     if chat.type not in ("group", "supergroup", "channel"):
         return
 
+    # Bot added
     if (
         member.new_chat_member
         and member.new_chat_member.status == ChatMemberStatus.MEMBER
+        and member.old_chat_member is None
+    ) or (
+        member.new_chat_member
+        and member.new_chat_member.status == ChatMemberStatus.MEMBER
+        and member.old_chat_member.status != ChatMemberStatus.MEMBER
     ):
         added_by = member.from_user
 
@@ -54,6 +61,7 @@ async def group_add_remove_logger(client: Client, member: ChatMemberUpdated):
             f"**Adder ID:** {adder_id}"
         )
 
+    # Bot removed
     elif (
         member.old_chat_member
         and member.old_chat_member.status == ChatMemberStatus.MEMBER
