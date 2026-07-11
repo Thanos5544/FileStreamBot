@@ -3,16 +3,12 @@ from FileStream.config import Telegram
 
 class LANG(object):
 
-    START_TEXT = """
-<b>👋 Hᴇʏ, {}</b>\n
-<b>🚀 ʏᴏᴜʀ ᴀʟʟ-ɪɴ-ᴏɴᴇ ᴛᴇʟᴇɢʀᴀᴍ ᴛᴏᴏʟ.</b>\n
-<b>🎬 ꜰɪʟᴇ ꜱᴛʀᴇᴀᴍɪɴɢ</b>\n
-<b>🔗 ᴅɪʀᴇᴄᴛ ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋꜱ</b>\n
-<b>🎨 ᴄɪɴᴇᴍᴀᴛɪᴄ ᴘᴏꜱᴛᴇʀꜱ</b>\n
-<b>🖼️ ᴍᴏᴠɪᴇ ᴛʜᴜᴍʙɴᴀɪʟꜱ</b>\n
-<b>⚡ ꜰᴀꜱᴛ • ꜱᴇᴄᴜʀᴇ • ʀᴇʟɪᴀʙʟᴇ</b>\n
-<blockquote>💎 ᴘᴏᴡᴇʀᴇᴅ ʙʏ : <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a></blockquote>
-"""
+    START_TEXT = """<b>👋 Hᴇʏ, {}</b>
+<b>🚀 ʏᴏᴜʀ ᴀʟʟ-ɪɴ-ᴏɴᴇ ᴛᴇʟᴇɢʀᴀᴍ ᴛᴏᴏʟ.</b>
+<b>🎬 ꜰɪʟᴇ ꜱᴛʀᴇᴀᴍɪɴɢ • 🔗 ᴅɪʀᴇᴄᴛ ʟɪɴᴋꜱ</b>
+<b>🎨 ᴄɪɴᴇᴍᴀᴛɪᴄ ᴘᴏꜱᴛᴇʀꜱ • 🖼️ ᴍᴏᴠɪᴇ ᴛʜᴜᴍʙɴᴀɪʟꜱ</b>
+<b>⚡ ꜰᴀꜱᴛ • ꜱᴇᴄᴜʀᴇ • ʀᴇʟɪᴀʙʟᴇ</b>
+<blockquote>💎 ᴘᴏᴡᴇʀᴇᴅ ʙʏ : <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a></blockquote>"""
     
     HELP_TEXT = """
 <b>- ᴀᴅᴅ ᴍᴇ ᴀs ᴀɴ ᴀᴅᴍɪɴ ᴏɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ</b>
