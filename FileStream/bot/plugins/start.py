@@ -1,25 +1,23 @@
 import logging
-import asyncio
+import math
 from FileStream import __version__
 from FileStream.bot import FileStream
 from FileStream.server.exceptions import FIleNotFound
-from FileStream.utils.bot_utils import gen_linkx, verify_user, is_user_exist
+from FileStream.utils.bot_utils import gen_linkx, verify_user
 from FileStream.config import Telegram
-from FileStream.utils.database import db
+from FileStream.utils.database import Database
 from FileStream.utils.translation import LANG, BUTTON
 from pyrogram import filters, Client
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pyrogram.enums.parse_mode import ParseMode
-import math
+import asyncio
 
+db = Database(Telegram.DATABASE_URL, Telegram.SESSION_NAME)
 
 @FileStream.on_message(filters.command('start') & filters.private)
 async def start(bot: Client, message: Message):
     if not await verify_user(bot, message):
         return
-
-    await is_user_exist(bot, message)  # ✅ USER SAVE FIX
-
     usr_cmd = message.text.split("_")[-1]
 
     if usr_cmd == "/start":
@@ -52,7 +50,8 @@ async def start(bot: Client, message: Message):
                         reply_markup=reply_markup,
                         quote=True
                     )
-            except FIleNotFound:
+
+            except FIleNotFound as e:
                 await message.reply_text("File Not Found")
             except Exception as e:
                 await message.reply_text("Something Went Wrong")
@@ -72,18 +71,18 @@ async def start(bot: Client, message: Message):
                         await message.delete()
                     except Exception:
                         pass
-            except FIleNotFound:
+
+            except FIleNotFound as e:
                 await message.reply_text("**File Not Found**")
             except Exception as e:
                 await message.reply_text("Something Went Wrong")
                 logging.error(e)
 
         else:
-            await message.reply_text("**Invalid Command**")
-
+            await message.reply_text(f"**Invalid Command**")
 
 @FileStream.on_message(filters.private & filters.command(["about"]))
-async def about(bot, message):
+async def start(bot, message):
     if not await verify_user(bot, message):
         return
     if Telegram.START_PIC:
@@ -99,7 +98,6 @@ async def about(bot, message):
             disable_web_page_preview=True,
             reply_markup=BUTTON.ABOUT_BUTTONS
         )
-
 
 @FileStream.on_message((filters.command('help')) & filters.private)
 async def help_handler(bot, message):
@@ -120,6 +118,7 @@ async def help_handler(bot, message):
             reply_markup=BUTTON.HELP_BUTTONS
         )
 
+# ---------------------------------------------------------------------------------------------------
 
 @FileStream.on_message(filters.command('files') & filters.private)
 async def my_files(bot: Client, message: Message):
@@ -139,8 +138,11 @@ async def my_files(bot: Client, message: Message):
             ],
         )
     if not file_list:
-        file_list.append([InlineKeyboardButton("ᴇᴍᴘᴛʏ", callback_data="N/A")])
+        file_list.append(
+            [InlineKeyboardButton("ᴇᴍᴘᴛʏ", callback_data="N/A")],
+        )
     file_list.append([InlineKeyboardButton("ᴄʟᴏsᴇ", callback_data="close")])
     await message.reply_photo(photo=Telegram.FILE_PIC,
                               caption="Total files: {}".format(total_files),
                               reply_markup=InlineKeyboardMarkup(file_list))
+
