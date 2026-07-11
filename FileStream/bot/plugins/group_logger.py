@@ -2,7 +2,7 @@ from pyrogram import filters
 from pyrogram.types import ChatMemberUpdated
 from pyrogram.enums import ChatMemberStatus
 
-from FileStream import FileStream
+from FileStream.bot import FileStream
 from FileStream.config import Telegram
 from FileStream.utils.database import Database
 
@@ -20,11 +20,6 @@ async def group_add_remove_logger(client, member: ChatMemberUpdated):
     if (
         member.new_chat_member
         and member.new_chat_member.status == ChatMemberStatus.MEMBER
-        and member.old_chat_member is None
-    ) or (
-        member.new_chat_member
-        and member.new_chat_member.status == ChatMemberStatus.MEMBER
-        and member.old_chat_member.status != ChatMemberStatus.MEMBER
     ):
         added_by = member.from_user
 
