@@ -4,11 +4,15 @@ from FileStream.config import Telegram
 class LANG(object):
 
     START_TEXT = """
-<b>👋 Hᴇʏ, </b>{}\n 
-<b>🎬 I'ᴍ ᴛᴇʟᴇɢʀᴀᴍ ғɪʟᴇs sᴛʀᴇᴀᴍɪɴɢ ʙᴏᴛ ᴀs ᴡᴇʟʟ ᴅɪʀᴇᴄᴛ ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴏʀ 🚀</b>\n
-<b>⚡ᴡᴏʀᴋɪɴɢ ᴏɴ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ 😍 </b>\n
-<blockquote>🌺 ᴍᴀɪɴᴛᴀɪɴᴇᴅ ʙʏ : <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a></blockquote></b>"""
-
+<b>👋 Hᴇʏ, {}</b>\n
+<b>🚀 ʏᴏᴜʀ ᴀʟʟ-ɪɴ-ᴏɴᴇ ᴛᴇʟᴇɢʀᴀᴍ ᴛᴏᴏʟ.</b>\n
+<b>🎬 ꜰɪʟᴇ ꜱᴛʀᴇᴀᴍɪɴɢ</b>\n
+<b>🔗 ᴅɪʀᴇᴄᴛ ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋꜱ</b>\n
+<b>🎨 ᴄɪɴᴇᴍᴀᴛɪᴄ ᴘᴏꜱᴛᴇʀꜱ</b>\n
+<b>🖼️ ᴍᴏᴠɪᴇ ᴛʜᴜᴍʙɴᴀɪʟꜱ</b>\n
+<b>⚡ ꜰᴀꜱᴛ • ꜱᴇᴄᴜʀᴇ • ʀᴇʟɪᴀʙʟᴇ</b>\n
+<blockquote>💎 ᴘᴏᴡᴇʀᴇᴅ ʙʏ : <a href="https://t.me/Patrick_Botz">Pᴀᴛʀɪᴄᴋ Bᴏᴛᴢ</a></blockquote>
+"""
     
     HELP_TEXT = """
 <b>- ᴀᴅᴅ ᴍᴇ ᴀs ᴀɴ ᴀᴅᴍɪɴ ᴏɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ</b>
