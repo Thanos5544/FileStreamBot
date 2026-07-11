@@ -1,41 +1,24 @@
 import asyncio
-import traceback
-from pyrogram.errors import (
-    FloodWait,
-    InputUserDeactivated,
-    UserIsBlocked,
-    PeerIdInvalid
-)
+from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated, PeerIdInvalid
 
 
-async def send_msg(client, user_id, message, pin: bool = False):
+async def send_msg(client, user_id, message, pin=False):
     try:
-        sent = await message.copy(chat_id=user_id)
-
+        sent = await message.copy(user_id)
         if pin:
             try:
-                await client.pin_chat_message(
-                    chat_id=user_id,
-                    message_id=sent.id,
-                    disable_notification=True
-                )
+                await client.pin_chat_message(user_id, sent.id)
             except Exception:
                 pass
-
         return 200, None
-
     except FloodWait as e:
         await asyncio.sleep(e.value)
         return await send_msg(client, user_id, message, pin)
-
-    except InputUserDeactivated:
-        return 400, f"{user_id} : deactivated\n"
-
     except UserIsBlocked:
-        return 400, f"{user_id} : blocked the bot\n"
-
+        return 400, "blocked"
+    except InputUserDeactivated:
+        return 400, "deactivated"
     except PeerIdInvalid:
-        return 400, f"{user_id} : user id invalid\n"
-
+        return 400, "invalid"
     except Exception:
-        return 500, f"{user_id} : {traceback.format_exc()}\n"
+        return 500, "error"
