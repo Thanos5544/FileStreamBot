@@ -1,737 +1,225 @@
-import os
-import re
-import time
-import uuid
-import asyncio
-import aiohttp
+import os,re,time,uuid,asyncio,aiohttp
+from pyrogram import Client,filters,StopPropagation
+from pyrogram.types import Message,CallbackQuery,InlineKeyboardMarkup,InlineKeyboardButton
 
-from pyrogram import Client, filters, StopPropagation
-from pyrogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton
-)
+TMDB_API = os.getenv("TMDB_API","18303910643c603ebb9e370f2f49db56")
+FANART_KEY = os.getenv("FANART_API","")
+CACHE={}; TTL=3600; PAGE=20
 
+def cb(s): return filters.create(lambda f,c,q:q.data.startswith(s))
+def clean(): [CACHE.pop(k) for k in list(CACHE.keys()) if time.time()-CACHE[k].get('t',0)>TTL]
+def token(c): return os.getenv("BOT_TOKEN") or c.bot_token or _("No Token")
+def _(p): return f"https://image.tmdb.org/t/p/original{p}" if p else None
+def uniq(l): return list(dict.fromkeys(l))
+def tit(m): return m.get("title") or m.get("name") or m.get("original_title") or "Unknown"
+def yr(m): d=m.get("release_date") or m.get("first_air_date"); return d[:4] if len(d)>=4 else "N/A"
+def cn(cat): 
+    return {"posters_en":"🇬🇧 English","posters_hi":"🇮🇳 Hindi","posters_all":"🖼️ Portrait",
+            "landscape":"🎬 Best Keyarts","wide":"🌅 More Promos","backdrops":"📸 Screenshots",
+            "clearart":"✨ ClearArt","discs":"💿 Discs","logos":"🔤 Logos"}.get(cat,cat)
 
-TMDB_API = os.getenv("TMDB_API", "18303910643c603ebb9e370f2f49db56")
+# API Calls
+async def search(q):
+    async with aiohttp.ClientSession() as s:
+        r=await s.get(f"https://api.themoviedb.org/3/search/multi",params={"api_key":TMDB_API,"query":q})
+        return await r.json()
 
-TMDB_BASE = "https://api.themoviedb.org/3"
-TMDB_IMG = "https://image.tmdb.org/t/p/original"
+async def imgs(typ,id):
+    async with aiohttp.ClientSession() as s:
+        r=await s.get(f"https://api.themoviedb.org/3/{typ}/{id}/images",params={"api_key":TMDB_API,"include_image_language":"en,hi,null"})
+        return await r.json()
 
-IMG_CACHE = {}
-CACHE_TIME = 1800
-PAGE_SIZE = 10
-
-
-def cb_starts(prefix: str):
-    return filters.create(
-        lambda _, __, query: bool(query.data and query.data.startswith(prefix))
-    )
-
-
-def cleanup_cache():
-    now = time.time()
-    for token, data in list(IMG_CACHE.items()):
-        if now - data.get("time", now) > CACHE_TIME:
-            IMG_CACHE.pop(token, None)
-
-
-def get_bot_token(client):
-    token = (
-        os.getenv("BOT_TOKEN")
-        or os.getenv("TG_BOT_TOKEN")
-        or os.getenv("TOKEN")
-        or getattr(client, "bot_token", None)
-    )
-
-    if not token:
-        raise Exception(
-            "BOT_TOKEN env nahi mila. Koyeb me BOT_TOKEN add karo."
-        )
-
-    return token
-
-
-def tmdb_img_url(path):
-    if not path:
-        return None
-    return TMDB_IMG + path
-
-
-def remove_duplicates(items):
-    return list(dict.fromkeys(items))
-
-
-def get_title(movie):
-    return (
-        movie.get("title")
-        or movie.get("name")
-        or movie.get("original_title")
-        or movie.get("original_name")
-        or "Unknown"
-    )
-
-
-def get_year(movie):
-    date = movie.get("release_date") or movie.get("first_air_date")
-    if date and len(date) >= 4:
-        return date[:4]
-    return "Unknown"
-
-
-def category_title(category):
-    names = {
-        "logos": "Logos",
-        "posters_all": "Portrait Posters",
-        "posters_en": "English Posters",
-        "posters_hi": "Hindi Posters",
-        "landscape": "Landscape",
-        "backdrops": "Backdrops",
-    }
-    return names.get(category, category)
-
-
-def build_category_buttons(token, categories):
-    buttons = []
-
-    if categories.get("logos"):
-        buttons.append([
-            InlineKeyboardButton(
-                f"🔤 Logos ({len(categories['logos'])})",
-                callback_data=f"imgcat|{token}|logos"
-            )
-        ])
-
-    if categories.get("posters_all"):
-        buttons.append([
-            InlineKeyboardButton(
-                f"🖼 Portrait Posters ({len(categories['posters_all'])})",
-                callback_data=f"imgcat|{token}|posters_all"
-            )
-        ])
-
-    if categories.get("posters_en"):
-        buttons.append([
-            InlineKeyboardButton(
-                f"🇬🇧 English Posters ({len(categories['posters_en'])})",
-                callback_data=f"imgcat|{token}|posters_en"
-            )
-        ])
-
-    if categories.get("posters_hi"):
-        buttons.append([
-            InlineKeyboardButton(
-                f"🇮🇳 Hindi Posters ({len(categories['posters_hi'])})",
-                callback_data=f"imgcat|{token}|posters_hi"
-            )
-        ])
-
-    if categories.get("landscape"):
-        buttons.append([
-            InlineKeyboardButton(
-                f"🌄 Landscape ({len(categories['landscape'])})",
-                callback_data=f"imgcat|{token}|landscape"
-            )
-        ])
-
-    if categories.get("backdrops"):
-        buttons.append([
-            InlineKeyboardButton(
-                f"🎞 Backdrops ({len(categories['backdrops'])})",
-                callback_data=f"imgcat|{token}|backdrops"
-            )
-        ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            "❌ Cancel",
-            callback_data=f"imgcancel|{token}"
-        )
-    ])
-
-    return InlineKeyboardMarkup(buttons)
-
-
-def build_page_buttons(token, category, page, total):
-    total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-
-    start = page * PAGE_SIZE + 1
-    end = min((page + 1) * PAGE_SIZE, total)
-    current_count = end - start + 1
-
-    buttons = []
-
-    buttons.append([
-        InlineKeyboardButton(
-            f"📤 Send {start}-{end} ({current_count})",
-            callback_data=f"imgsend|{token}|{category}|{page}"
-        )
-    ])
-
-    nav = []
-
-    if page > 0:
-        nav.append(
-            InlineKeyboardButton(
-                "⬅️ Prev",
-                callback_data=f"imgpage|{token}|{category}|{page - 1}"
-            )
-        )
-
-    if page < total_pages - 1:
-        nav.append(
-            InlineKeyboardButton(
-                "Next ➡️",
-                callback_data=f"imgpage|{token}|{category}|{page + 1}"
-            )
-        )
-
-    if nav:
-        buttons.append(nav)
-
-    buttons.append([
-        InlineKeyboardButton(
-            "🔙 Categories",
-            callback_data=f"imgback|{token}"
-        ),
-        InlineKeyboardButton(
-            "❌ Cancel",
-            callback_data=f"imgcancel|{token}"
-        )
-    ])
-
-    return InlineKeyboardMarkup(buttons)
-
-
-async def search_tmdb(session, query):
-    async with session.get(
-        f"{TMDB_BASE}/search/multi",
-        params={
-            "api_key": TMDB_API,
-            "query": query
-        }
-    ) as resp:
-        return await resp.json()
-
-
-async def fetch_images(session, media_type, movie_id):
-    async with session.get(
-        f"{TMDB_BASE}/{media_type}/{movie_id}/images",
-        params={
-            "api_key": TMDB_API,
-            "include_image_language": "en,hi,null"
-        }
-    ) as resp:
-        return await resp.json()
-
-
-def select_movie(results, year=None):
-    filtered = [
-        x for x in results
-        if x.get("media_type") in ["movie", "tv"]
-    ]
-
-    if not filtered:
-        return None
-
-    movie = filtered[0]
-
-    if year:
-        for x in filtered:
-            date = x.get("release_date") or x.get("first_air_date")
-            if date and date.startswith(year):
-                movie = x
-                break
-
-    return movie
-
-
-def sort_tmdb_images(items):
+async def fan(id,t="movies"):
+    if not FANART_KEY: return {}
     try:
-        return sorted(
-            items,
-            key=lambda x: (
-                x.get("vote_average") or 0,
-                x.get("vote_count") or 0,
-                x.get("width") or 0
-            ),
-            reverse=True
-        )
-    except Exception:
-        return items
+        async with aiohttp.ClientSession() as s:
+            r=await s.get(f"https://webservice.fanart.tv/v3/{t}/{id}",params={"api_key":FANART_KEY},timeout=5)
+            return await r.json() if r.status==200 else {}
+    except: return {}
 
-
-def make_categories(movie, data):
-    posters = sort_tmdb_images(data.get("posters", []) or [])
-    backdrops_data = sort_tmdb_images(data.get("backdrops", []) or [])
-    logos = sort_tmdb_images(data.get("logos", []) or [])
-
-    categories = {
-        "logos": [],
-        "posters_all": [],
-        "posters_en": [],
-        "posters_hi": [],
-        "landscape": [],
-        "backdrops": []
-    }
-
-    # Main poster
-    if movie.get("poster_path"):
-        categories["posters_all"].append(tmdb_img_url(movie["poster_path"]))
-
-    # Landscape me sirf main official backdrop
-    if movie.get("backdrop_path"):
-        categories["landscape"].append(tmdb_img_url(movie["backdrop_path"]))
-
+# Smart Classifier - Ye wala function tumhara main hai!
+def classify(mv,d,fd=None):
+    pts=sorted(d.get("posts",[])or[],key=lambda x:(x.get("vote_av",0),x.get("vote_ct",0)),reverse=True)
+    bds=sorted(d.get("backdrops",[])or[],key=lambda x:(x.get("vote_av",0),x.get("vote_ct",0)),reverse=True)
+    lgs=sorted(d.get("logos",[])or[],key=lambda x:(x.get("vote_av",0),x.get("vote_ct",0)),reverse=True)
+    
+    cat={"logos":[],"pe":[],"ph":[],"pa":[],"land":[],"wid":[],"bds":[],"ca":[],"dc":[]}
+    
     # Posters
-    for img in posters:
-        url = tmdb_img_url(img.get("file_path"))
-        if not url:
-            continue
-
-        lang = img.get("iso_639_1")
-
-        categories["posters_all"].append(url)
-
-        if lang == "en":
-            categories["posters_en"].append(url)
-
-        if lang == "hi":
-            categories["posters_hi"].append(url)
-
-    # Backdrops me saare TMDB backdrops
-    for img in backdrops_data:
-        url = tmdb_img_url(img.get("file_path"))
-        if not url:
-            continue
-
-        categories["backdrops"].append(url)
-
+    if mv.get("poster_path"): cat["pa"].insert(0,_(mv["poster_path"]))
+    for i in pts:
+        u=_(i.get("file_path")); l=i.get("iso_639_1")
+        if u: cat["pa"].append(u); 
+        if l=="en" and u: cat["pe"].append(u)
+        elif l=="hi" and u: cat["ph"].append(u)
+    
+    # Backdrops Separation Logic
+    p=[]; s=[]
+    if mv.get("backdrop_path"): p.append(_(mv["backdrop_path"]))
+    
+    for i in bds:
+        u=_(i.get("file_path"))
+        if not u or u in p: continue
+        w=i.get("width",0); h=i.get("height",0); v=i.get("vote_count",0); a=i.get("vote_average",0)
+        ar=w/max(h,1)
+        
+        # Premium Art vs Screenshot check
+        is_promo=(v>=3 and a>=5) or(w>=1920 and 1.7<=ar<=2.4 and not((w,h)in[(1920,1080),(3840,2160),(1280,720)])) or(a>=7 and w>=1280)
+        
+        (p if is_promo else s).append(u)
+    
+    cat["land"]=uniq(p[:15]); cat["wid"]=uniq(p[15:]) if len(p)>15 else []
+    cat["bds"]=uniq(s)
+    
     # Logos
-    for img in logos:
-        url = tmdb_img_url(img.get("file_path"))
-        if url:
-            categories["logos"].append(url)
+    for i in lgs:
+        u=_(i.get("file_path"))
+        if u: cat["logos"].append(u)
+    
+    # Fanart extras
+    if fd:
+        for item in (fd.get("hdmovieclearart")or[])[:8]:
+            u=item.get("url")
+            if u: cat["ca"].append(u)
+        for item in (fd.get("moviedisc")or[])[:5]:
+            u=item.get("url")
+            if u: cat["dc"].append(u)
+    
+    return {k:uniq(v) for k,v in cat.items() if v}
 
-    for key in categories:
-        categories[key] = remove_duplicates(categories[key])
+# Buttons
+def mk_btns(t,cats):
+    b=[]
+    r=[i for x in [("posters_en","🇬🇧 EN","pe"),("posters_hi","🇮🇳 HI","ph")] for i in[InlineKeyboardButton(f"{x[1]} ({len(cats[x[2]])})",data=f"ic|{t}|{x[2]}")] if cats.get(x[2])]
+    if r: b.append(r)
+    if cats.get("pa"): b.append([InlineKeyboardButton(f"🖼️ Portrait ({len(cats['pa'])})",data=f"ic|{t}|pa")])
+    
+    lr=[]
+    if cats.get("land"): lr.append(InlineKeyboardButton(f"🎬 Keyarts ({len(cats['land'])})",data=f"ic|{t}|land"))
+    if cats.get("wid"): lr.append(InlineKeyboardButton(f"🌅 More ({len(cats['wid'])})",data=f"ic|{t}|wid"))
+    if lr: b.append(lr)
+    
+    fr=[]
+    if cats.get("ca"): fr.append(InlineKeyboardButton(f"✨ ClearArt ({len(cats['ca'])})",data=f"ic|{t}|ca"))
+    if cats.get("dc"): fr.append(InlineKeyboardButton(f"💿 Discs ({len(cats['dc'])})",data=f"ic|{t}|dc"))
+    if fr: b.append(fr)
+    if cats.get("bds"): b.append([InlineKeyboardButton(f"📸 Screenshots ({len(cats['bds'])})",data=f"ic|{t}|bds")])
+    if len(cats.get("logs",[]))>2: b.append([InlineKeyboardButton(f"🔤 Logos ({len(cats['logos'])})",data=f"ic|{t}|logs")])
+    b.append([InlineKeyboardButton("❌ Cancel",data=f"ix|{t}")])
+    return InlineKeyboardMarkup(b)
 
-    return categories
+def pg_btn(t,cat,p,total):
+    tp=max(1,(total+PAGE-1)//PAGE); st=p*PAGE+1; ed=min(st+PAGE-1,total); cnt=ed-st+1
+    b=[[InlineKeyboardButton(f"📤 Send {st}-{ed} ({cnt}) ",data=f"is|{t}|{cat}|{p}")]]
+    nb=[]
+    if p>0: nb.append(InlineKeyboardButton("⬅️ Prev",data=f"ip|{t}|{cat}|{p-1}"))
+    if tp>1: nb.append(InlineKeyboardButton(f"{p+1}/{tp}",data="-"))
+    if p<tp-1: nb.append(InlineKeyboardButton("Next ➡️",data=f"ip|{t}|{cat}|{p+1}"))
+    if nb: b.append(nb)
+    b.append([InlineKeyboardButton("🔙 Back",data=f"ib|{t}"),InlineKeyboardButton("❌ Cancel",data=f"ix|{t}")])
+    return InlineKeyboardMarkup(b)
 
+def pg_txt(mv,cat,p,total):
+    return f"**{tit(mv)}** ({yr(mv)})\n📁 **{cn(cat)}**\n🖼 Total:**{total}**\n\n📄 Page**{p+1}**"
 
-async def send_images(client, chat_id, images, reply_to_message_id=None, message_thread_id=None):
-    """
-    Album Telegram Bot API se send karega.
-    Pyrogram send_media_group use nahi hoga, isliye topics error nahi aayega.
-    """
-    bot_token = get_bot_token(client)
+# Send Function - 20 pics at once (10+10 albums)
+async def send20(c,chat,imgs,rt=None,tid=None):
+    tk=token(c); ok=0; fail=0
+    async with aiohttp.ClientSession() as s:
+        for bn,i in enumerate(range(0,len(imgs),10),1):
+            ch=imgs[i:i+10]
+            try:
+                if len(ch)==1:
+                    api=f"https://api.telegram.org/bot{tk}/sendPhoto"
+                    payload={"chat_id":chat,"photo":ch[0],"allow_sending_without_reply":True}
+                else:
+                    api=f"https://api.telegram.org/bot{tk}/sendMediaGroup"
+                    payload={"chat_id":chat,"media":[{"type":"photo","media":u}for u in ch],"allow_sending_without_reply":True}
+                if rt:payload["reply_to_message_id"]=rt
+                if tid:payload["message_thread_id"]=tid
+                
+                r=await s.post(api,json=payload)
+                res=await r.json()
+                ok+=len(ch)if res.get("ok")else 0
+                fail+=len(ch)if not res.get("ok")else 0
+                if i+10<len(imgs): await asyncio.sleep(0.8)
+            except: fail+=len(ch)
+    return ok,fail
 
-    async with aiohttp.ClientSession() as session:
-        for i in range(0, len(images), 10):
-            chunk = images[i:i + 10]
-
-            # Bot API sendMediaGroup minimum 2 media maangta hai
-            if len(chunk) == 1:
-                api_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-
-                payload = {
-                    "chat_id": chat_id,
-                    "photo": chunk[0],
-                }
-
-                if reply_to_message_id:
-                    payload["reply_to_message_id"] = reply_to_message_id
-                    payload["allow_sending_without_reply"] = True
-
-                if message_thread_id:
-                    payload["message_thread_id"] = message_thread_id
-
-                async with session.post(api_url, json=payload) as resp:
-                    result = await resp.json()
-
-                    if not result.get("ok"):
-                        raise Exception(result.get("description", "Bot API photo send failed"))
-
-            else:
-                api_url = f"https://api.telegram.org/bot{bot_token}/sendMediaGroup"
-
-                media = []
-                for url in chunk:
-                    media.append({
-                        "type": "photo",
-                        "media": url
-                    })
-
-                payload = {
-                    "chat_id": chat_id,
-                    "media": media
-                }
-
-                if reply_to_message_id:
-                    payload["reply_to_message_id"] = reply_to_message_id
-                    payload["allow_sending_without_reply"] = True
-
-                if message_thread_id:
-                    payload["message_thread_id"] = message_thread_id
-
-                async with session.post(api_url, json=payload) as resp:
-                    result = await resp.json()
-
-                    if not result.get("ok"):
-                        raise Exception(result.get("description", "Bot API album send failed"))
-
-            await asyncio.sleep(1)
-
-
-def page_text(movie, category, page, total):
-    title = get_title(movie)
-    year = get_year(movie)
-
-    total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-    start = page * PAGE_SIZE + 1
-    end = min((page + 1) * PAGE_SIZE, total)
-
-    return (
-        f"🎬 **{title}** ({year})\n"
-        f"📁 Category: **{category_title(category)}**\n"
-        f"🖼 Total Available: **{total}**\n\n"
-        f"📄 Page: **{page + 1}/{total_pages}**\n"
-        f"📌 Current Images: **{start}-{end}**\n\n"
-        f"📤 Send dabao to current 10 images album me send hongi.\n"
-        f"Next/Prev se page change kar sakte ho."
-    )
-
-
-@Client.on_message(filters.command("img") & (filters.private | filters.group))
-async def img(client: Client, message: Message):
-    cleanup_cache()
-
-    if len(message.command) < 2:
-        return await message.reply_text(
-            "❌ Use:\n"
-            "`/img movie name year`\n\n"
-            "Example:\n"
-            "`/img pathaan 2023`"
-        )
-
-    name = " ".join(message.command[1:]).strip()
-
-    msg = await message.reply_text("🔎 Searching movie/images...")
-
+# Handlers
+@Client.on_message(filters.command("img")&(filters.private|filters.group))
+async def imgcmd(c,m):
+    clean()
+    if len(m.command)<2: return await m.reply("`/img movie year`")
+    q=" ".join(m.command[1:]).strip(); st=await m.reply("🔍 Searching...")
     try:
-        year = None
-        match = re.search(r"(19|20)\d{2}", name)
+        y=re.search(r'\b(19|20)\d{2}\b',q); yr_=y.group() if y else None
+        nm=re.sub(r'\b(19|20)\d{2}\b','',q).strip() or q
+        sr=await search(nm); res=sr.get("results",[]); mv=None
+        
+        for x in res:
+            if x.get("media_type")in["movie","tv"]:
+                if yr_:
+                    d=x.get("release_date")or x.get("first_air_date")
+                    if d and d.startswith(yr_): mv=x;break
+                elif not mv: mv=x
+        
+        if not mv: return await st.edit_text("❌ Not found!")
+        typ=mv.get("media_type","movie"); mid=mv["id"]
+        await st.edit_text(f"🖼️ Fetching **{tit(mv)}**...")
+        di=await imgs(typ,mid); fi=await fan(mid,"movies"if typ=="movie"else"tv")
+        cls=classify(mv,di,fi)
+        
+        if not cls: return await st.edit_text("⚠️ No images!")
+        t=uuid.uuid4().hex[:10]
+        CACHE[t]={"uid":m.from_user.id,"cid":m.chat.id,"rt":m.id,"tid":getattr(m,'message_thread_id',None),"mv":mv,"c":cls,"t":time.time()}
+        await st.edit_text(f"🎬 **{tit(mv)}** ({yr(mv)})\n_Select:",reply_markup=mk_btns(t,cls))
+    except Exception as e: await st.edit_text(f"`{e}`")
 
-        if match:
-            year = match.group()
-            search_name = name.replace(year, "").strip()
-        else:
-            search_name = name
-
-        async with aiohttp.ClientSession() as session:
-            search = await search_tmdb(session, search_name)
-
-            results = search.get("results", [])
-            movie = select_movie(results, year)
-
-            if not movie:
-                return await msg.edit_text("❌ Movie/Series not found.")
-
-            media_type = movie.get("media_type", "movie")
-            movie_id = movie["id"]
-
-            data = await fetch_images(session, media_type, movie_id)
-
-        categories = make_categories(movie, data)
-        available_categories = {k: v for k, v in categories.items() if v}
-
-        if not available_categories:
-            return await msg.edit_text("❌ Is movie ke images nahi mile.")
-
-        token = uuid.uuid4().hex[:10]
-
-        IMG_CACHE[token] = {
-            "user_id": message.from_user.id if message.from_user else 0,
-            "chat_id": message.chat.id,
-            "reply_to": message.id,
-            "message_thread_id": getattr(message, "message_thread_id", None),
-            "movie": movie,
-            "categories": categories,
-            "time": time.time()
-        }
-
-        title = get_title(movie)
-        movie_year = get_year(movie)
-
-        await msg.edit_text(
-            f"🎬 **{title}** ({movie_year})\n\n"
-            f"Images category select karo:",
-            reply_markup=build_category_buttons(token, categories)
-        )
-
-    except Exception as e:
-        print("IMG ERROR:", e)
-        await msg.edit_text(
-            "❌ Error aaya bro.\n\n"
-            f"`{str(e)[:900]}`"
-        )
-
-
-@Client.on_callback_query(cb_starts("imgcat|"), group=-999)
-async def img_category(client: Client, query: CallbackQuery):
+@Client.on_callback_query(cb("ic|"),group=-999)
+async def icat(c,q):
     try:
-        cleanup_cache()
+        _,t,cat=q.data.split("|");d=CACHE[t]
+        if not d or q.from_user.id!=d["uid"]: return q.answer("Exp!",show_alert=True)
+        im=d["c"].get(cat,[])
+        if not im: return q.answer("Empty!",show_alert=True)
+        await q.message.edit_text(pg_txt(d["mv"],cat,0,len(im)),reply_markup=pg_btn(t,cat,0,len(im))); q.answer(cn(cat))
+    finally: raise StopPropagation
 
-        try:
-            _, token, category = query.data.split("|")
-        except Exception:
-            await query.answer("Invalid button.", show_alert=True)
-            return
-
-        data = IMG_CACHE.get(token)
-
-        if not data:
-            await query.answer(
-                "Expired ho gaya. Dobara /img command use karo.",
-                show_alert=True
-            )
-            return
-
-        if query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye buttons tumhare liye nahi hain bro.",
-                show_alert=True
-            )
-            return
-
-        images = data["categories"].get(category, [])
-
-        if not images:
-            await query.answer(
-                "Is category me images nahi hain.",
-                show_alert=True
-            )
-            return
-
-        page = 0
-        total = len(images)
-
-        await query.answer(category_title(category))
-
-        await query.message.edit_text(
-            page_text(data["movie"], category, page, total),
-            reply_markup=build_page_buttons(token, category, page, total)
-        )
-
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("imgpage|"), group=-999)
-async def img_page(client: Client, query: CallbackQuery):
+@Client.on_callback_query(cb("ip|"),group=-999)
+async def ipage(c,q):
     try:
-        cleanup_cache()
+        _,t,cat,p=q.data.split("|");p=int(p);d=CACHE[t]
+        if not d or q.from_user.id!=d["uid"]: return q.answer("!",show_alert=True)
+        im=d["c"].get(cat,[]);tl=len(im);tp=max(1,(tl+PAGE-1)//PAGE);p=max(0,min(p,tp-1))
+        await q.message.edit_text(pg_txt(d["mv"],cat,p,tl),reply_markup=pg_btn(t,cat,p,tl)); q.answer(f"P{p+1}")
+    finally: raise StopPropagation
 
-        try:
-            _, token, category, page = query.data.split("|")
-            page = int(page)
-        except Exception:
-            await query.answer("Invalid button.", show_alert=True)
-            return
-
-        data = IMG_CACHE.get(token)
-
-        if not data:
-            await query.answer(
-                "Expired ho gaya. Dobara /img command use karo.",
-                show_alert=True
-            )
-            return
-
-        if query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye buttons tumhare liye nahi hain bro.",
-                show_alert=True
-            )
-            return
-
-        images = data["categories"].get(category, [])
-        total = len(images)
-
-        if total == 0:
-            await query.answer("Images nahi mili.", show_alert=True)
-            return
-
-        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-
-        if page < 0:
-            page = 0
-
-        if page >= total_pages:
-            page = total_pages - 1
-
-        await query.answer(f"Page {page + 1}")
-
-        await query.message.edit_text(
-            page_text(data["movie"], category, page, total),
-            reply_markup=build_page_buttons(token, category, page, total)
-        )
-
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("imgsend|"), group=-999)
-async def img_send(client: Client, query: CallbackQuery):
+@Client.on_callback_query(cb("is|"),group=-999)
+async def isend(c,q):
     try:
-        cleanup_cache()
+        _,t,cat,p=q.data.split("|");p=int(p);d=CACHE[t]
+        if not d or q.from_user.id!=d["uid"]: return q.answer("!",show_alert=True)
+        im=d["c"].get(cat,[]);st=p*PAGE;ed=min(st+PAGE,len(im));sel=im[st:ed]
+        if not sel: return q.answer("Empty range!",show_alert=True)
+        q.answer(f"Sending {len(sel)}..."); await q.message.edit_text("⬆️ Uploading...")
+        ok,fail=await send20(c,q.message.chat.id,sel,d.get("rt"),d.get("tid"))
+        await q.message.edit_text(f"✅ Sent **{ok}** images!\n_Albums: {(ok//10)+(1 if ok%10>0 else 0)}_\n_Next/Prev for more_",reply_markup=pg_btn(t,cat,p,len(im)))
+    except Exception as e: await q.message.edit_text(f"`{e}`")
+    finally: raise StopPropagation
 
-        try:
-            _, token, category, page = query.data.split("|")
-            page = int(page)
-        except Exception:
-            await query.answer("Invalid button.", show_alert=True)
-            return
-
-        data = IMG_CACHE.get(token)
-
-        if not data:
-            await query.answer(
-                "Expired ho gaya. Dobara /img command use karo.",
-                show_alert=True
-            )
-            return
-
-        if query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye buttons tumhare liye nahi hain bro.",
-                show_alert=True
-            )
-            return
-
-        images = data["categories"].get(category, [])
-        total = len(images)
-
-        if total == 0:
-            await query.answer("Images nahi mili.", show_alert=True)
-            return
-
-        start = page * PAGE_SIZE
-        end = min(start + PAGE_SIZE, total)
-
-        selected = images[start:end]
-
-        if not selected:
-            await query.answer("Is page me images nahi hain.", show_alert=True)
-            return
-
-        await query.answer(f"Sending {len(selected)} images...")
-
-        # Button wala message edit/delete nahi hoga
-        status = await client.send_message(
-            chat_id=query.message.chat.id,
-            text=(
-                f"⬆️ Uploading **{len(selected)}** images...\n\n"
-                f"🎭 Category: **{category_title(category)}**\n"
-                f"🖼 Images: **{start + 1}-{end}**"
-            ),
-            reply_to_message_id=query.message.id
-        )
-
-        try:
-            await send_images(
-                client=client,
-                chat_id=query.message.chat.id,
-                images=selected,
-                reply_to_message_id=data.get("reply_to"),
-                message_thread_id=data.get("message_thread_id")
-            )
-
-            await status.edit_text(
-                f"✅ Sent **{len(selected)}** images.\n\n"
-                f"Button wala message delete nahi hoga.\n"
-                f"Next/Prev se aur images bhej sakte ho."
-            )
-
-        except Exception as e:
-            print("SEND ERROR:", e)
-            await status.edit_text(
-                "❌ Images send nahi hui.\n\n"
-                f"`{str(e)[:900]}`"
-            )
-
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("imgback|"), group=-999)
-async def img_back(client: Client, query: CallbackQuery):
+@Client.on_callback_query(cb("ib|"),group=-999)
+async def iback(c,q):
     try:
-        cleanup_cache()
+        _,t=q.data.split("|");d=CACHE[t]
+        if not d or q.from_user.id!=d["uid"]: return q.answer("!",show_alert=True)
+        await q.message.edit_text(f"🎬 **{tit(d['mv'])}** ({yr(d['mv'])}\n_Select:",reply_markup=mk_btns(t,d["c"])); q.answer("Back")
+    finally: raise StopPropagation
 
-        try:
-            _, token = query.data.split("|")
-        except Exception:
-            await query.answer("Invalid button.", show_alert=True)
-            return
-
-        data = IMG_CACHE.get(token)
-
-        if not data:
-            await query.answer(
-                "Expired ho gaya. Dobara /img command use karo.",
-                show_alert=True
-            )
-            return
-
-        if query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye buttons tumhare liye nahi hain bro.",
-                show_alert=True
-            )
-            return
-
-        movie = data["movie"]
-        categories = data["categories"]
-
-        title = get_title(movie)
-        movie_year = get_year(movie)
-
-        await query.answer("Categories")
-
-        await query.message.edit_text(
-            f"🎬 **{title}** ({movie_year})\n\n"
-            f"Images category select karo:",
-            reply_markup=build_category_buttons(token, categories)
-        )
-
-    finally:
-        raise StopPropagation
-
-
-@Client.on_callback_query(cb_starts("imgcancel|"), group=-999)
-async def img_cancel(client: Client, query: CallbackQuery):
+@Client.on_callback_query(cb("ix|"),group=-999)
+async def ixcl(c,q):
     try:
-        try:
-            _, token = query.data.split("|")
-        except Exception:
-            await query.answer("Invalid button.", show_alert=True)
-            return
-
-        data = IMG_CACHE.get(token)
-
-        if data and query.from_user.id != data["user_id"]:
-            await query.answer(
-                "Ye buttons tumhare liye nahi hain bro.",
-                show_alert=True
-            )
-            return
-
-        IMG_CACHE.pop(token, None)
-
-        await query.answer("Cancelled")
-        await query.message.edit_text("❌ Cancelled.")
-
-    finally:
-        raise StopPropagation
+        _,t=q.data.split("|");d=CACHE.get(t)
+        if d and q.from_user.id!=d.get("uid"): return q.answer("!",show_alert=True)
+        CACHE.pop(t,None); q.answer("Cancel"); q.message.edit_text("❌ Cancelled.")
+    finally: raise StopPropagation
