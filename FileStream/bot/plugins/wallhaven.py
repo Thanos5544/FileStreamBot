@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import random
 import asyncio
 import aiohttp
 from typing import Dict, List, Optional
@@ -14,27 +15,36 @@ from pyrogram.types import (
 )
 
 # ==========================================
-# ⚙️ CONFIGURATION & CONSTANTS
+# ⚙️ CONFIG
 # ==========================================
-WALLHAVEN_API = "https://wallhaven.cc/api/v1/search"
-PAGE_SIZE = 10  # Ek baar me 10 HD Wallpapers (Telegram Album Limit)
-CACHE_TTL = 1800  # 30 Minutes Cache Expiry
+# Optional: Koyeb me WALLHAVEN_API_KEY add karoge to aur zyada results milenge
+WALLHAVEN_KEY = os.getenv("WALLHAVEN_API_KEY", "3I4YNfdhia47CD1WKcDszZXrfvBPHOUO")
+WALLHAVEN_URL = "https://wallhaven.cc/api/v1/search"
+
+BATCH_SIZE = 10          # Ek album = 10 HD pics
+CACHE_TTL = 3600         # 1 hour session
+MAX_FETCH_TRY = 5
+
 WALL_CACHE: Dict[str, dict] = {}
 
+DEFAULT_TAGS = [
+    "anime", "anime girl", "superhero", "marvel", "dc comics",
+    "cyberpunk", "spider-man", "batman", "iron man", "goku",
+    "naruto", "one piece", "jujutsu kaisen", "demon slayer",
+    "solo leveling", "attack on titan", "movie poster", "4k landscape"
+]
+
 
 # ==========================================
-# 🛠️ HELPER FUNCTIONS
+# 🛠️ HELPERS
 # ==========================================
-def cleanup_expired_cache():
-    """Auto remove expired search sessions."""
-    current_time = time.time()
-    expired = [k for k, v in WALL_CACHE.items() if current_time - v.get("time", current_time) > CACHE_TTL]
-    for k in expired:
+def clean_cache():
+    now = time.time()
+    for k in [k for k, v in WALL_CACHE.items() if now - v.get("time", now) > CACHE_TTL]:
         WALL_CACHE.pop(k, None)
 
 
 def get_bot_token(client: Client) -> str:
-    """Safe Bot Token extractor for Direct Telegram API Album Sending."""
     token = (
         os.getenv("BOT_TOKEN")
         or os.getenv("TG_BOT_TOKEN")
@@ -42,211 +52,255 @@ def get_bot_token(client: Client) -> str:
         or getattr(client, "bot_token", None)
     )
     if not token:
-        raise ValueError("❌ BOT_TOKEN environment variable nahi mila!")
+        raise ValueError("BOT_TOKEN env nahi mila!")
     return token
 
 
 # ==========================================
-# 🌐 WALLHAVEN API FETCHER (1080p to 4K+)
+# 🌐 WALLHAVEN API
 # ==========================================
-async def fetch_wallpapers(session: aiohttp.ClientSession, query: str, page: int = 1) -> List[str]:
-    """
-    Wallhaven se minimum 1920x1080 (Full HD) aur Top Rated wallpapers nikalta hai.
-    """
+async def wh_fetch_page(session: aiohttp.ClientSession, query: str, page: int, seed: str) -> List[dict]:
     params = {
         "q": query,
-        "categories": "111",      # General, Anime, People sab allowed
-        "purity": "100",          # 100% SFW (Safe For Work / Telegram safe)
-        "sorting": "toplist",     # Sabse Best & High Rated Pehle
-        "order": "desc",
-        "atleast": "1920x1080",   # GUARANTEED Full HD & 4K quality!
-        "page": page
+        "categories": "111",
+        "purity": "100",          # SFW only
+        "sorting": "random",      # har refresh pe naya maal
+        "seed": seed,             # paging consistent rahe
+        "atleast": "1920x1080",   # Full HD / 4K guaranteed
+        "page": page,
     }
+    if WALLHAVEN_KEY:
+        params["apikey"] = WALLHAVEN_KEY
 
     try:
-        async with session.get(WALLHAVEN_API, params=params) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                # Direct full-resolution image URL extract karna
-                results = [item["path"] for item in data.get("data", []) if "path" in item]
-                return results[:PAGE_SIZE]
+        async with session.get(WALLHAVEN_URL, params=params, timeout=aiohttp.ClientTimeout(total=25)) as r:
+            if r.status != 200:
+                return []
+            data = await r.json()
+            return [
+                {"url": i["path"], "res": i.get("resolution", "HD")}
+                for i in data.get("data", []) if i.get("path")
+            ]
     except Exception as e:
-        print(f"Wallhaven API Error: {e}")
-    return []
+        print("Wallhaven fetch error:", e)
+        return []
+
+
+async def get_next_batch(sess: dict) -> List[dict]:
+    """Pool se 10 fresh unique wallpapers nikalta hai, kam pade to next page fetch karta hai."""
+    pool: List[dict] = sess["pool"]
+    seen: set = sess["seen"]
+
+    async with aiohttp.ClientSession() as http:
+        tries = 0
+        while len(pool) < BATCH_SIZE and tries < MAX_FETCH_TRY:
+            tries += 1
+            items = await wh_fetch_page(http, sess["query"], sess["api_page"], sess["seed"])
+            sess["api_page"] += 1
+
+            if not items:
+                # page khatam -> naya seed le kar dobara start
+                sess["seed"] = uuid.uuid4().hex[:6]
+                sess["api_page"] = 1
+                if tries >= 2:
+                    break
+                continue
+
+            for it in items:
+                if it["url"] not in seen:
+                    seen.add(it["url"])
+                    pool.append(it)
+
+    batch = pool[:BATCH_SIZE]
+    del pool[:BATCH_SIZE]
+    return batch
 
 
 # ==========================================
-# 📤 TELEGRAM ALBUM SENDER (DIRECT API)
+# 📤 ALBUM SENDER (Direct Bot API = no topic bug)
 # ==========================================
-async def send_album_via_api(client: Client, chat_id: int, image_urls: List[str], reply_to: Optional[int] = None, thread_id: Optional[int] = None):
-    """Bina kisi topic/thread error ke 10 images ka album bhejta hai."""
-    bot_token = get_bot_token(client)
-    api_url = f"https://api.telegram.org/bot{bot_token}/sendMediaGroup"
+async def send_album(client: Client, chat_id: int, items: List[dict], thread_id: Optional[int] = None):
+    token = get_bot_token(client)
+    base = f"https://api.telegram.org/bot{token}"
+    urls = [i["url"] for i in items]
 
-    media = [{"type": "photo", "media": url} for url in image_urls]
-    payload = {
-        "chat_id": chat_id,
-        "media": media,
-        "allow_sending_without_reply": True
-    }
-    if reply_to:
-        payload["reply_to_message_id"] = reply_to
-    if thread_id:
-        payload["message_thread_id"] = thread_id
+    async with aiohttp.ClientSession() as http:
+        payload = {"chat_id": chat_id}
+        if thread_id:
+            payload["message_thread_id"] = thread_id
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(api_url, json=payload) as resp:
-            res = await resp.json()
-            if not res.get("ok"):
-                raise Exception(res.get("description", "Telegram API Album Send Failed"))
+        if len(urls) == 1:
+            payload["photo"] = urls[0]
+            async with http.post(f"{base}/sendPhoto", json=payload) as r:
+                res = await r.json()
+                if not res.get("ok"):
+                    raise Exception(res.get("description"))
+            return
+
+        payload["media"] = [{"type": "photo", "media": u} for u in urls]
+        async with http.post(f"{base}/sendMediaGroup", json=payload) as r:
+            res = await r.json()
+
+        if res.get("ok"):
+            return
+
+        # Fallback: agar koi ek image reject ho jaye to ek-ek karke bhejo
+        for u in urls:
+            p = {"chat_id": chat_id, "photo": u}
+            if thread_id:
+                p["message_thread_id"] = thread_id
+            try:
+                await http.post(f"{base}/sendPhoto", json=p)
+                await asyncio.sleep(0.4)
+            except Exception:
+                pass
 
 
 # ==========================================
-# 🎨 UI KEYBOARDS & TEXTS
+# 🎨 UI
 # ==========================================
-def build_wall_keyboard(token: str, page: int) -> InlineKeyboardMarkup:
+def wall_keyboard(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Next 10 HD Wallpapers", callback_data=f"wl:next:{token}")],
         [
-            InlineKeyboardButton(
-                f"🔄 Refresh / Next 10 HD Pics (Page {page + 1})", 
-                callback_data=f"wall:next:{token}:{page + 1}"
-            )
-        ],
-        [
-            InlineKeyboardButton("❌ Close", callback_data=f"wall:close:{token}")
+            InlineKeyboardButton("🎲 Random Topic", callback_data=f"wl:rand:{token}"),
+            InlineKeyboardButton("❌ Close", callback_data=f"wl:close:{token}")
         ]
     ])
 
 
-def generate_wall_text(query: str, page: int, count: int) -> str:
+def wall_text(sess: dict, count: int) -> str:
     return (
-        f"🌌 **Wallhaven HD / 4K Wallpapers**\n\n"
-        f"🔎 **Search Tag:** `{query}`\n"
-        f"🖼 **Sent Images:** `{count} HD Pics` (Page {page})\n"
-        f"⚡ **Quality:** `1080p - 4K Ultra HD`\n\n"
-        f"👇 *Niche button daba ke agle 10 naye wallpapers dekho!*"
+        f"✅ **{count} Ultra HD Wallpapers Sent!**\n\n"
+        f"🔎 **Topic:** `{sess['query']}`\n"
+        f"📦 **Batch:** `#{sess['batch_no']}`  |  📊 **Total:** `{sess['total_sent']}`\n"
+        f"⚡ **Quality:** `1080p → 4K`\n\n"
+        f"👇 Button dabao aur agle **10 naye** wallpaper lo!"
     )
 
 
 # ==========================================
-# 🤖 PYROGRAM HANDLERS
+# 🤖 /wall COMMAND
 # ==========================================
 @Client.on_message(filters.command(["wall", "wallpaper", "hd"]) & (filters.private | filters.group))
-async def wall_command(client: Client, message: Message):
-    cleanup_expired_cache()
+async def wall_cmd(client: Client, message: Message):
+    clean_cache()
 
-    # Agar user ne kuch type nahi kiya, toh default killer tags use honge
-    if len(message.command) < 2:
-        query_str = "anime OR superhero OR cyberpunk OR 4k"
-        display_query = "Anime / Superhero / Cyberpunk (Default)"
+    if len(message.command) > 1:
+        query = " ".join(message.command[1:]).strip()
     else:
-        query_str = " ".join(message.command[1:]).strip()
-        display_query = query_str
+        query = random.choice(DEFAULT_TAGS)
 
-    status_msg = await message.reply_text(f"⚡ **Searching 10 HD Wallpapers for:** `{display_query}`...")
+    status = await message.reply_text(f"⚡ **Fetching 10 HD Wallpapers...**\n🔎 `{query}`")
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            images = await fetch_wallpapers(session, query_str, page=1)
+    token = uuid.uuid4().hex[:8]
+    sess = {
+        "user_id": message.from_user.id if message.from_user else 0,
+        "chat_id": message.chat.id,
+        "thread_id": getattr(message, "message_thread_id", None),
+        "query": query,
+        "seed": uuid.uuid4().hex[:6],
+        "api_page": 1,
+        "pool": [],
+        "seen": set(),
+        "batch_no": 1,
+        "total_sent": 0,
+        "time": time.time(),
+    }
+    WALL_CACHE[token] = sess
 
-        if not images:
-            return await status_msg.edit_text(
-                f"❌ **Koi HD Wallpaper nahi mila For:** `{display_query}`\n\n"
-                "💡 *Koi dusra naam try karo jaise:* `/wall batman`, `/wall naruto`, ya `/wall iron man`"
-            )
+    batch = await get_next_batch(sess)
 
-        # Cache session store karna taaki refresh button kaam kare
-        token = uuid.uuid4().hex[:8]
-        WALL_CACHE[token] = {
-            "user_id": message.from_user.id if message.from_user else 0,
-            "chat_id": message.chat.id,
-            "reply_to": message.id,
-            "thread_id": getattr(message, "message_thread_id", None),
-            "query": query_str,
-            "display_query": display_query,
-            "time": time.time()
-        }
-
-        await status_msg.edit_text("📤 **Sending 10 Ultra HD Wallpapers Album...**")
-
-        # Send 10 Images Album
-        await send_album_via_api(
-            client=client,
-            chat_id=message.chat.id,
-            image_urls=images,
-            reply_to=message.id,
-            thread_id=getattr(message, "message_thread_id", None)
+    if not batch:
+        WALL_CACHE.pop(token, None)
+        return await status.edit_text(
+            f"❌ **`{query}` ke liye kuch nahi mila.**\n\n"
+            "💡 Try: `/wall naruto` • `/wall batman` • `/wall cyberpunk`"
         )
 
-        # Edit status message to show Refresh button
-        await status_msg.edit_text(
-            text=generate_wall_text(display_query, page=1, count=len(images)),
-            reply_markup=build_wall_keyboard(token, page=1)
+    try:
+        await send_album(client, sess["chat_id"], batch, sess["thread_id"])
+        sess["total_sent"] += len(batch)
+
+        await status.delete()
+
+        # Button ALWAYS album ke niche
+        await client.send_message(
+            chat_id=sess["chat_id"],
+            text=wall_text(sess, len(batch)),
+            reply_markup=wall_keyboard(token),
+            message_thread_id=sess["thread_id"]
+        ) if sess["thread_id"] else await client.send_message(
+            chat_id=sess["chat_id"],
+            text=wall_text(sess, len(batch)),
+            reply_markup=wall_keyboard(token)
         )
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ **Error Aaya:**\n`{str(e)[:400]}`")
+        await status.edit_text(f"❌ **Send Failed:**\n`{str(e)[:300]}`")
 
 
-@Client.on_callback_query(filters.regex(r"^wall:"))
-async def wall_callback_handler(client: Client, query: CallbackQuery):
-    cleanup_expired_cache()
-    parts = query.data.split(":")
-    action = parts[1]
-    token = parts[2]
+# ==========================================
+# 🔘 CALLBACKS
+# ==========================================
+@Client.on_callback_query(filters.regex(r"^wl:"))
+async def wall_cb(client: Client, query: CallbackQuery):
+    clean_cache()
+    _, action, token = query.data.split(":")
 
-    session_data = WALL_CACHE.get(token)
-    if not session_data:
-        return await query.answer("⚠️ Ye session purana ho gaya hai. Dobara /wall command use karo!", show_alert=True)
+    sess = WALL_CACHE.get(token)
+    if not sess:
+        return await query.answer("⚠️ Session expire ho gaya, dobara /wall karo!", show_alert=True)
 
-    # Allow only the person who triggered the command to click (prevent spam)
-    if query.from_user.id != session_data["user_id"] and session_data["user_id"] != 0:
-        return await query.answer("❌ Bro, ye command tumne nahi lagayi thi. Apni command lagao!", show_alert=True)
+    if sess["user_id"] and query.from_user.id != sess["user_id"]:
+        return await query.answer("❌ Ye tumhari request nahi hai bro!", show_alert=True)
+
+    if action == "close":
+        WALL_CACHE.pop(token, None)
+        await query.answer("Closed ✅")
+        return await query.message.delete()
+
+    if action == "rand":
+        sess["query"] = random.choice(DEFAULT_TAGS)
+        sess["seed"] = uuid.uuid4().hex[:6]
+        sess["api_page"] = 1
+        sess["pool"].clear()
+        sess["seen"].clear()
+        await query.answer(f"🎲 New Topic: {sess['query']}")
+    else:
+        await query.answer("⚡ Loading next 10...")
+
+    # Purana button message hata do (taaki naya button album ke niche aaye)
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
+    loading = await client.send_message(
+        sess["chat_id"],
+        f"⏳ **Loading 10 fresh HD wallpapers...**\n🔎 `{sess['query']}`"
+    )
+
+    batch = await get_next_batch(sess)
+
+    if not batch:
+        return await loading.edit_text(
+            "❌ **Aur wallpapers nahi mile!**\n💡 Naya topic try karo: `/wall <name>`",
+            reply_markup=wall_keyboard(token)
+        )
 
     try:
-        if action == "close":
-            WALL_CACHE.pop(token, None)
-            await query.answer("Closed!")
-            return await query.message.delete()
+        await send_album(client, sess["chat_id"], batch, sess["thread_id"])
+        sess["batch_no"] += 1
+        sess["total_sent"] += len(batch)
+        sess["time"] = time.time()
 
-        elif action == "next":
-            next_page = int(parts[3])
-            query_str = session_data["query"]
-            display_query = session_data["display_query"]
+        await loading.delete()
 
-            await query.answer(f"⚡ Fetching Page {next_page} (Next 10 HD Pics)...")
-
-            # Notification message during upload
-            upload_msg = await client.send_message(
-                chat_id=query.message.chat.id,
-                text=f"🔄 **Downloading & Uploading Next 10 HD Wallpapers (Page {next_page})...**",
-                reply_to_message_id=query.message.id
-            )
-
-            async with aiohttp.ClientSession() as session:
-                images = await fetch_wallpapers(session, query_str, page=next_page)
-
-            if not images:
-                await upload_msg.delete()
-                return await query.answer("❌ Aur images nahi mili bro! Koi naya topic search karo.", show_alert=True)
-
-            # Send New Album
-            await send_album_via_api(
-                client=client,
-                chat_id=session_data["chat_id"],
-                image_urls=images,
-                reply_to=session_data["reply_to"],
-                thread_id=session_data["thread_id"]
-            )
-
-            await upload_msg.delete()
-
-            # Update the existing message button to Page + 1
-            await query.message.edit_text(
-                text=generate_wall_text(display_query, page=next_page, count=len(images)),
-                reply_markup=build_wall_keyboard(token, page=next_page)
-            )
-
+        await client.send_message(
+            chat_id=sess["chat_id"],
+            text=wall_text(sess, len(batch)),
+            reply_markup=wall_keyboard(token)
+        )
     except Exception as e:
-        await query.answer("❌ Kuch technical problem aayi!", show_alert=True)
-        print(f"Wallhaven Callback Error: {e}")
+        await loading.edit_text(f"❌ **Error:** `{str(e)[:300]}`")
