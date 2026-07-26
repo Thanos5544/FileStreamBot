@@ -8,49 +8,75 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # ==========================================
-# 🟢 STARTUP: EJS WARM-UP + CHECKS
+# 🟢 BGUTIL DENO SERVER AUTO-START
 # ==========================================
-def startup_check():
-    for name, cmd in [('Node.js', ['node', '--version']),
-                       ('FFmpeg', ['ffmpeg', '-version']),
-                       ('yt-dlp', ['yt-dlp', '--version'])]:
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            v = (r.stdout or r.stderr).strip().split('\n')[0]
-            print(f"🟢 {name}: {v}")
-        except Exception as e:
-            print(f"❌ {name}: NOT FOUND ({e})")
+BGUTIL_PROC = None
 
-    # Check EJS cache
-    ejs_dir = "/root/.cache/yt-dlp/ytdlp-ejs"
-    if os.path.exists(ejs_dir) and os.listdir(ejs_dir):
-        files = os.listdir(ejs_dir)
-        print(f"🟢 EJS Cache: {files}")
-    else:
-        print("⚠️ EJS not cached, warming up...")
-        warmup_ejs()
-
-def warmup_ejs():
-    """Bot startup pe EJS scripts download karo"""
+def start_bgutil_server():
+    global BGUTIL_PROC
+    
+    # Check if already running
     try:
-        print("🔄 Warming up EJS solver...")
-        r = subprocess.run(
-            ['yt-dlp', '--remote-components', 'ejs:github', '--js-runtimes', 'nodejs',
-             '--simulate', '--quiet', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
-            capture_output=True, text=True, timeout=60
-        )
-        print(f"🔄 Warmup stdout: {r.stdout[-200:]}")
-        print(f"🔄 Warmup stderr: {r.stderr[-200:]}")
+        r = requests.get('http://127.0.0.1:4416/ping', timeout=2)
+        if r.status_code == 200:
+            print("✅ bgutil server already running!")
+            return True
+    except Exception:
+        pass
 
-        ejs_dir = "/root/.cache/yt-dlp/ytdlp-ejs"
-        if os.path.exists(ejs_dir) and os.listdir(ejs_dir):
-            print(f"✅ EJS warmed up: {os.listdir(ejs_dir)}")
-        else:
-            print("❌ EJS warmup failed!")
-    except Exception as e:
-        print(f"❌ EJS warmup error: {e}")
+    print("🚀 Starting bgutil PO Token server (Deno)...")
+    
+    # Try multiple start commands
+    start_commands = [
+        ['deno', 'task', 'start'],
+        ['deno', 'run', '-A', '--unstable', 'src/main.ts'],
+        ['deno', 'run', '-A', 'src/main.ts'],
+    ]
+    
+    for cmd in start_commands:
+        try:
+            print(f"  Trying: {' '.join(cmd)}")
+            BGUTIL_PROC = subprocess.Popen(
+                cmd,
+                cwd='/opt/bgutil/server',
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            
+            # Wait for server to be ready (max 20 sec)
+            for i in range(20):
+                time.sleep(1)
+                try:
+                    r = requests.get('http://127.0.0.1:4416/ping', timeout=2)
+                    if r.status_code == 200:
+                        print(f"✅ bgutil server ready! (took {i+1}s)")
+                        return True
+                except Exception:
+                    pass
+                
+                # Check if process died
+                if BGUTIL_PROC.poll() is not None:
+                    stderr = BGUTIL_PROC.stderr.read().decode()[-300:] if BGUTIL_PROC.stderr else ""
+                    print(f"  ❌ Process died: {stderr}")
+                    break
+            else:
+                # Loop finished without break = timeout
+                print(f"  ⚠️ Timeout with command, trying next...")
+                BGUTIL_PROC.kill()
+                continue
+            
+            continue  # Process died, try next command
+            
+        except Exception as e:
+            print(f"  ❌ Command failed: {e}")
+            continue
+    
+    print("❌ All bgutil start commands failed!")
+    BGUTIL_PROC = None
+    return False
 
-startup_check()
+# Start server on module load
+start_bgutil_server()
 
 # ==========================================
 # 🛠️ HELPERS
@@ -87,23 +113,18 @@ def find_cookies():
     for p in ["cookies.txt", "./cookies.txt", "../cookies.txt",
               os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt")]:
         if os.path.exists(p):
-            print(f"✅ Cookies: {os.path.abspath(p)}")
             return p
     return None
 
 # ==========================================
-# 🚀 CLI SUBPROCESS DOWNLOADER (NOT Python API!)
+# 🚀 DOWNLOADER (bgutil plugin auto PO token dega)
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
     cookie_path = find_cookies()
 
-    # CLI command — NOT Python API
     cmd = [
         'yt-dlp',
-        '--cache-dir', '/root/.cache/yt-dlp',
-        '--remote-components', 'ejs:github',
-        '--js-runtimes', 'nodejs',
         '-f', 'bv*+ba/b',
         '--merge-output-format', 'mp4',
         '-o', f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
@@ -122,20 +143,14 @@ def download_video(url, output_dir="downloads"):
 
     cmd.append(url)
 
-    print(f"🔄 Running CLI: {' '.join(cmd[:8])}...")
+    print(f"🔄 Downloading with bgutil PO Token...")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
-    # Print debug output
-    if result.stderr:
-        # Only print important lines
-        for line in result.stderr.split('\n'):
-            if any(k in line.lower() for k in ['error', 'warning', 'ejs', 'challenge', 'signature', 'format', 'download']):
-                print(f"  [yt-dlp] {line}")
-
     if result.returncode != 0:
-        raise Exception(result.stderr[-500:])
+        stderr = result.stderr.strip()
+        print(f"❌ stderr: {stderr[-600:]}")
+        raise Exception(stderr[-400:])
 
-    # Parse --print output
     info = {}
     for line in result.stdout.strip().split('\n'):
         line = line.strip()
@@ -144,19 +159,16 @@ def download_video(url, output_dir="downloads"):
             info[key.strip()] = val.strip()
 
     filepath = info.get('filepath', '')
-
-    # Fallback: find newest video file
     if not filepath or not os.path.exists(filepath):
-        vids = [os.path.join(output_dir, f) for f in os.listdir(output_dir)
+        mp4s = [os.path.join(output_dir, f) for f in os.listdir(output_dir)
                 if f.endswith(('.mp4', '.webm', '.mkv'))]
-        if vids:
-            filepath = max(vids, key=os.path.getctime)
+        if mp4s:
+            filepath = max(mp4s, key=os.path.getctime)
         else:
             raise Exception("No video file found!")
 
     print(f"✅ Downloaded: {filepath} ({os.path.getsize(filepath)} bytes)")
 
-    # Thumbnail
     thumb_path = None
     thumb_url = info.get('thumbnail', '')
     if thumb_url and thumb_url.startswith('http'):
@@ -194,7 +206,8 @@ async def yt_download_cmd(client: Client, message: Message):
 
     try:
         cf = find_cookies()
-        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ️ **Downloading (CLI + EJS)...**")
+        server_ok = "✅" if BGUTIL_PROC and BGUTIL_PROC.poll() is None else "❌"
+        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | 🔑 PO Token: {server_ok} | ⬇️ **Downloading...**")
 
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_video, url)
@@ -214,7 +227,7 @@ async def yt_download_cmd(client: Client, message: Message):
         start = time.time()
 
         caption = (f"🎬 **{data['title']}**\n\n👤 `{data['uploader']}`\n"
-                   f"📦 `{humanbytes(fsize)}`\n🍪 `{'✅' if data['cookie_used'] else '❌'}`\n⚡ **via Bot**")
+                   f"📦 `{humanbytes(fsize)}`\n⚡ **via Bot**")
 
         await client.send_video(
             chat_id=message.chat.id, video=filepath, caption=caption,
@@ -231,7 +244,7 @@ async def yt_download_cmd(client: Client, message: Message):
         if "Sign in to confirm" in err:
             await status.edit_text("❌ **Cookie Expire!** Naya upload karo.")
         else:
-            await status.edit_text(f"❌ **Error:** `{err[:400]}`")
+            await status.edit_text(f"❌ **Error:**\n```\n{err[:500]}\n```")
     finally:
         try:
             if data and os.path.exists(data.get("filepath", "")): os.remove(data["filepath"])
