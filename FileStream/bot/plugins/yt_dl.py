@@ -76,30 +76,38 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 4-LAYER RETRY DOWNLOADER (NEVER FAILS)
+# 🚀 BULLETPROOF DOWNLOADER (5-CLIENT RETRY)
 # ==========================================
 def download_with_cookies(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
-
     cookie_path = find_cookies()
 
-    # 4 alag format strategies — ek fail hua toh doosra try hoga
-    format_strategies = [
-        # Strategy 1: Best MP4 video + audio merge (needs FFmpeg)
+    # 5 alag client configs — ek fail toh doosra try
+    configs = [
+        # 1. WEB client + cookies (sabse reliable)
         {
-            'format': 'bestvideo*[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bv*+ba/b',
+            'merge_output_format': 'mp4',
+            'extractor_args': {'youtube': {'player_client': ['web']}},
+        },
+        # 2. TV Embedded (no cookies needed, bot detection bypass)
+        {
+            'format': 'bv*+ba/b',
+            'merge_output_format': 'mp4',
+            'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
+        },
+        # 3. iOS client
+        {
+            'format': 'bv*+ba/b',
+            'merge_output_format': 'mp4',
+            'extractor_args': {'youtube': {'player_client': ['ios']}},
+        },
+        # 4. Default (yt-dlp khud decide kare)
+        {
+            'format': 'bv*+ba/b',
             'merge_output_format': 'mp4',
         },
-        # Strategy 2: Any best video + audio merge (needs FFmpeg)
-        {
-            'format': 'bestvideo*+bestaudio*/best',
-            'merge_output_format': 'mp4',
-        },
-        # Strategy 3: Single best stream, no merge (NO FFmpeg needed)
-        {
-            'format': 'best',
-        },
-        # Strategy 4: Ultimate fallback — whatever YouTube gives
+        # 5. Last resort — single stream, no merge
         {
             'format': 'b',
         },
@@ -111,13 +119,8 @@ def download_with_cookies(url, output_dir="downloads"):
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web']
-            }
-        },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
@@ -129,27 +132,33 @@ def download_with_cookies(url, output_dir="downloads"):
     filename = None
     last_error = None
 
-    for i, strategy in enumerate(format_strategies):
+    for i, cfg in enumerate(configs):
         try:
-            print(f"🔄 Trying format strategy {i+1}: {strategy['format']}")
-            opts = {**base_opts, **strategy}
+            client_name = cfg.get('extractor_args', {}).get('youtube', {}).get('player_client', ['default'])[0]
+            print(f"🔄 Try {i+1}/5 — Client: {client_name} | Format: {cfg['format']}")
+            opts = {**base_opts, **cfg}
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
-                # If merge_output_format was set, fix extension
-                if strategy.get('merge_output_format') and not filename.endswith('.mp4'):
+                if cfg.get('merge_output_format') and not filename.endswith('.mp4'):
                     filename = filename.rsplit('.', 1)[0] + '.mp4'
-                print(f"✅ Strategy {i+1} succeeded!")
+                print(f"✅ SUCCESS with client: {client_name}")
                 break
         except Exception as e:
             last_error = str(e)
-            print(f"❌ Strategy {i+1} failed: {last_error[:100]}")
+            print(f"❌ Try {i+1} failed: {last_error[:120]}")
             continue
 
     if not info or not filename or not os.path.exists(filename):
-        raise Exception(f"All 4 format strategies failed! Last error: {last_error}")
+        # Debug: available formats print karo
+        try:
+            with yt_dlp.YoutubeDL({'quiet': False, 'listformats': True, 'cookiefile': cookie_path} if cookie_path else {'quiet': False, 'listformats': True}) as ydl:
+                ydl.extract_info(url, download=False)
+        except Exception as dbg:
+            print(f"DEBUG formats: {dbg}")
+        raise Exception(f"All 5 clients failed! Last: {last_error}")
 
-    # Thumbnail download manually
+    # Thumbnail
     thumb_path = None
     thumb_url = info.get('thumbnail')
     if thumb_url:
@@ -199,7 +208,7 @@ async def yt_download_cmd(client: Client, message: Message):
         data = await loop.run_in_executor(None, download_with_cookies, url)
 
         if not data or not os.path.exists(data["filepath"]):
-            return await status.edit_text("❌ **Download fail ho gaya!** File save nahi ho payi.")
+            return await status.edit_text("❌ **Download fail ho gaya!**")
 
         filepath = data["filepath"]
         thumb = data.get("thumb")
@@ -209,7 +218,7 @@ async def yt_download_cmd(client: Client, message: Message):
             os.remove(filepath)
             if thumb and os.path.exists(thumb):
                 os.remove(thumb)
-            return await status.edit_text("❌ **File 2GB se badi hai! Telegram allow nahi karta.**")
+            return await status.edit_text("❌ **File 2GB se badi hai!**")
 
         await status.edit_text("📤 **Telegram pe upload ho raha hai...**")
         start_time = time.time()
@@ -239,15 +248,12 @@ async def yt_download_cmd(client: Client, message: Message):
     except Exception as e:
         err_msg = str(e)
         print("DL Error:", err_msg)
-
         if "Sign in to confirm" in err_msg:
             await status.edit_text(
-                "❌ **Cookie Expire Ho Gayi!**\n\n"
-                "👉 Kiwi Browser se naya `cookies.txt` nikaal ke "
-                "bot ke **Root Folder** me upload karo aur restart karo!"
+                "❌ **Cookie Expire!** Naya `cookies.txt` upload karo."
             )
         else:
-            await status.edit_text(f"❌ **Error:** `{err_msg[:350]}`")
+            await status.edit_text(f"❌ **Error:** `{err_msg[:400]}`")
 
     finally:
         try:
