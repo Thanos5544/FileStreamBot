@@ -2,7 +2,6 @@ import os
 import time
 import math
 import asyncio
-import aiohttp
 import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -58,57 +57,28 @@ async def progress_for_pyrogram(current, total, ud_type, message, start_time):
             pass
 
 # ==========================================
-# 🚀 METHOD 1: COBALT API (NO COOKIES/NO IP BAN)
+# 🚀 ULTRA-FAST DOWNLOADER (NO FFMPEG NEEDED)
 # ==========================================
-async def download_via_api(url, output_dir="downloads"):
-    os.makedirs(output_dir, exist_ok=True)
-    api_url = "https://api.cobalt.tools/api/json"
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
-    data = {"url": url, "videoQuality": "720", "filenameStyle": "basic"}
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(api_url, json=data, headers=headers) as resp:
-            if resp.status != 200: return None
-            res = await resp.json()
-            
-            direct_url = res.get("url")
-            if not direct_url: return None
-            
-            # Download Video File
-            filename = f"{output_dir}/video_{int(time.time())}.mp4"
-            async with session.get(direct_url) as file_resp:
-                with open(filename, "wb") as f:
-                    while True:
-                        chunk = await file_resp.content.read(1024 * 1024)
-                        if not chunk: break
-                        f.write(chunk)
-            return {"filepath": filename, "title": "YouTube Video", "duration": 0, "thumb": None, "uploader": "YouTube"}
-
-# ==========================================
-# 🚀 METHOD 2: YT-DLP ANDROID CLIENT BYPASS
-# ==========================================
-def download_via_ytdlp_bypass(url, output_dir="downloads"):
+def download_video_direct(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
     
-    # Ye Android & iOS client use karta hai jispe YouTube IP block ya Cookie nahi maangta
+    # 'best[ext=mp4]' download karta hai wo video jisme AUDIO aur VIDEO pehle se mix ho.
+    # Isse FFmpeg ki zaroorat nahi padti aur error kabhi nahi aata!
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best[ext=mp4]/best',
         'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
-        'writethumbnail': True,
+        'no_warnings': True,
+        # Ye YouTube ko bolta hai ki hum iPhone/Android app se dekh rahe hain (No Cookie Error)
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'web_embedded'],
+                'player_client': ['ios', 'android', 'mweb', 'tvembedded'],
                 'skip': ['hls', 'dash']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
@@ -116,16 +86,27 @@ def download_via_ytdlp_bypass(url, output_dir="downloads"):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-        thumb_file = filename.rsplit('.', 1)[0] + ".webp"
-        if not os.path.exists(thumb_file):
-            thumb_file = filename.rsplit('.', 1)[0] + ".jpg"
-            if not os.path.exists(thumb_file): thumb_file = None
+        
+        # Download Thumbnail directly via HTTP without using FFmpeg
+        thumb_path = None
+        thumb_url = info.get('thumbnail')
+        if thumb_url:
+            try:
+                thumb_path = f"{output_dir}/thumb_{info.get('id', 'pic')}.jpg"
+                r = requests.get(thumb_url, timeout=10)
+                if r.status_code == 200:
+                    with open(thumb_path, 'wb') as f:
+                        f.write(r.content)
+                else:
+                    thumb_path = None
+            except Exception:
+                thumb_path = None
             
         return {
             "title": info.get("title", "Video"),
             "duration": info.get("duration", 0),
             "filepath": filename,
-            "thumb": thumb_file,
+            "thumb": thumb_path,
             "uploader": info.get("uploader", "Unknown")
         }
 
@@ -135,36 +116,34 @@ def download_via_ytdlp_bypass(url, output_dir="downloads"):
 @Client.on_message(filters.command(["dl", "yt", "video"]) & (filters.private | filters.group))
 async def yt_download_cmd(client: Client, message: Message):
     if len(message.command) < 2:
-        return await message.reply_text("⚠️ **Link toh do bhai!**\n\n**Example:** `/dl https://youtu.be/xxxxxx`")
+        return await message.reply_text(
+            "⚠️ **Link toh do bhai!**\n\n"
+            "**Example:** `/dl https://youtu.be/xxxxxx`"
+        )
     
-    url = message.command[1]
+    url = message.command[1].strip()
     status = await message.reply_text("🔎 **Video find kar raha hoon...**")
     
     data = None
     try:
-        # PEHLE: Bina Cookie waala Android Bypass try karega
-        await status.edit_text("⬇️ **Downloading Video (Fast Mode)...**")
+        await status.edit_text("⬇️ **Downloading Video (Fast & Safe Mode)...**")
+        
+        # Background me download taaki bot hang na ho
         loop = asyncio.get_event_loop()
-        try:
-            data = await loop.run_in_executor(None, download_via_ytdlp_bypass, url)
-        except Exception as e:
-            print(f"YT-DLP Bypass Failed: {e}. Switching to API...")
-            
-        # AGAR IP BAN HAI TOH: Direct Server API use karega (100% Working Backup)
-        if not data or not os.path.exists(data.get("filepath", "")):
-            await status.edit_text("⚡ **Server IP Blocked by YT. Using Bypass API...**")
-            data = await download_via_api(url)
+        data = await loop.run_in_executor(None, download_video_direct, url)
             
         if not data or not os.path.exists(data["filepath"]):
-            return await status.edit_text("❌ **Download fail ho gaya!** Link private ya broken ho sakta hai.")
+            return await status.edit_text("❌ **Download fail ho gaya!** File save nahi ho payi.")
             
         filepath = data["filepath"]
         thumb = data.get("thumb")
         file_size = os.path.getsize(filepath)
 
+        # Telegram Bot 2GB Limit Check
         if file_size > 2000 * 1024 * 1024:
             os.remove(filepath)
-            return await status.edit_text("❌ **File 2GB se badi hai! Telegram allow nahi karta.**")
+            if thumb and os.path.exists(thumb): os.remove(thumb)
+            return await status.edit_text("❌ **File 2GB se badi hai! Telegram bot allow nahi karta.**")
 
         await status.edit_text("📤 **Telegram pe upload ho raha hai...**")
         start_time = time.time()
@@ -176,6 +155,7 @@ async def yt_download_cmd(client: Client, message: Message):
             f"⚡ **Downloaded via Bot**"
         )
 
+        # Video Send karna
         await client.send_video(
             chat_id=message.chat.id,
             video=filepath,
@@ -190,7 +170,14 @@ async def yt_download_cmd(client: Client, message: Message):
         await status.delete()
 
     except Exception as e:
-        await status.edit_text(f"❌ **Error:** `{str(e)[:250]}`")
+        # Ab agar koi error aayega toh bot CHAT ME EXACT ERROR BATEYEGA taaki hume pata chale
+        err_msg = str(e)
+        print("DL Error:", err_msg)
+        await status.edit_text(
+            f"❌ **Download Failed!**\n\n"
+            f"**Reason:** `{err_msg[:350]}`\n\n"
+            f"*Note: Agar age-restricted ya private video hai toh nahi hogi.*"
+        )
         
     finally:
         # 🧹 Server Cleanup (Storage full nahi hoga)
