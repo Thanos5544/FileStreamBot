@@ -8,14 +8,12 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # ==========================================
-# 🟢 BGUTIL DENO SERVER AUTO-START
+# 🟢 BGUTIL SERVER AUTO-START
 # ==========================================
 BGUTIL_PROC = None
 
 def start_bgutil_server():
     global BGUTIL_PROC
-    
-    # Check if already running
     try:
         r = requests.get('http://127.0.0.1:4416/ping', timeout=2)
         if r.status_code == 200:
@@ -25,57 +23,31 @@ def start_bgutil_server():
         pass
 
     print("🚀 Starting bgutil PO Token server (Deno)...")
+    try:
+        BGUTIL_PROC = subprocess.Popen(
+            ['deno', 'run', '-A', 'src/main.ts'],
+            cwd='/opt/bgutil/server',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for i in range(15):
+            time.sleep(1)
+            try:
+                r = requests.get('http://127.0.0.1:4416/ping', timeout=2)
+                if r.status_code == 200:
+                    print(f"✅ bgutil server ready! ({i+1}s)")
+                    return True
+            except Exception:
+                pass
+            if BGUTIL_PROC.poll() is not None:
+                print("❌ bgutil process died!")
+                break
+    except Exception as e:
+        print(f"❌ bgutil start failed: {e}")
     
-    # Try multiple start commands
-    start_commands = [
-        ['deno', 'task', 'start'],
-        ['deno', 'run', '-A', '--unstable', 'src/main.ts'],
-        ['deno', 'run', '-A', 'src/main.ts'],
-    ]
-    
-    for cmd in start_commands:
-        try:
-            print(f"  Trying: {' '.join(cmd)}")
-            BGUTIL_PROC = subprocess.Popen(
-                cmd,
-                cwd='/opt/bgutil/server',
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            
-            # Wait for server to be ready (max 20 sec)
-            for i in range(20):
-                time.sleep(1)
-                try:
-                    r = requests.get('http://127.0.0.1:4416/ping', timeout=2)
-                    if r.status_code == 200:
-                        print(f"✅ bgutil server ready! (took {i+1}s)")
-                        return True
-                except Exception:
-                    pass
-                
-                # Check if process died
-                if BGUTIL_PROC.poll() is not None:
-                    stderr = BGUTIL_PROC.stderr.read().decode()[-300:] if BGUTIL_PROC.stderr else ""
-                    print(f"  ❌ Process died: {stderr}")
-                    break
-            else:
-                # Loop finished without break = timeout
-                print(f"  ⚠️ Timeout with command, trying next...")
-                BGUTIL_PROC.kill()
-                continue
-            
-            continue  # Process died, try next command
-            
-        except Exception as e:
-            print(f"  ❌ Command failed: {e}")
-            continue
-    
-    print("❌ All bgutil start commands failed!")
     BGUTIL_PROC = None
     return False
 
-# Start server on module load
 start_bgutil_server()
 
 # ==========================================
@@ -117,7 +89,7 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 DOWNLOADER (bgutil plugin auto PO token dega)
+# 🚀 CLI DOWNLOADER (EJS + PO Token + Cookies = ALL)
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
@@ -125,12 +97,14 @@ def download_video(url, output_dir="downloads"):
 
     cmd = [
         'yt-dlp',
+        '--verbose',
+        '--remote-components', 'ejs:github',
+        '--js-runtimes', 'nodejs',
         '-f', 'bv*+ba/b',
         '--merge-output-format', 'mp4',
         '-o', f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         '--no-playlist',
         '--no-progress',
-        '--no-warnings',
         '--print', 'after_move:filepath=%(filepath)s',
         '--print', 'after_move:title=%(title)s',
         '--print', 'after_move:duration=%(duration)s',
@@ -143,13 +117,17 @@ def download_video(url, output_dir="downloads"):
 
     cmd.append(url)
 
-    print(f"🔄 Downloading with bgutil PO Token...")
+    print(f"🔄 Downloading with EJS + PO Token + Cookies...")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
+    # Debug output
+    for line in (result.stdout + result.stderr).split('\n'):
+        ll = line.lower()
+        if any(k in ll for k in ['ejs', 'signature', 'challenge', 'pot', 'bgutil', 'format', 'error', 'download', 'cache']):
+            print(f"  | {line}")
+
     if result.returncode != 0:
-        stderr = result.stderr.strip()
-        print(f"❌ stderr: {stderr[-600:]}")
-        raise Exception(stderr[-400:])
+        raise Exception(result.stderr[-400:])
 
     info = {}
     for line in result.stdout.strip().split('\n'):
@@ -207,7 +185,7 @@ async def yt_download_cmd(client: Client, message: Message):
     try:
         cf = find_cookies()
         server_ok = "✅" if BGUTIL_PROC and BGUTIL_PROC.poll() is None else "❌"
-        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | 🔑 PO Token: {server_ok} | ⬇️ **Downloading...**")
+        await status.edit_text(f"🍪 {'✅' if cf else '❌'} |  {server_ok} | ⬇️ **Downloading (EJS+POT+Cookie)...**")
 
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_video, url)
