@@ -61,7 +61,6 @@ async def progress_for_pyrogram(current, total, ud_type, message, start_time):
 # 🍪 FIND COOKIES FILE
 # ==========================================
 def find_cookies():
-    """Bot ke root folder se cookies.txt dhundhta hai"""
     possible_paths = [
         "cookies.txt",
         "./cookies.txt",
@@ -81,17 +80,22 @@ def find_cookies():
 # ==========================================
 def download_with_cookies(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
-    
+
     cookie_path = find_cookies()
 
     ydl_opts = {
-        # Pre-merged MP4 (Audio+Video already mixed) — NO FFmpeg needed
-        'format': 'best[ext=mp4]/best',
+        # Android client = pre-merged MP4 (no FFmpeg needed)
+        'format': 'best[height<=720]/best',
         'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        },
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
@@ -105,7 +109,7 @@ def download_with_cookies(url, output_dir="downloads"):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-        
+
         # Thumbnail download manually (no FFmpeg needed)
         thumb_path = None
         thumb_url = info.get('thumbnail')
@@ -120,7 +124,7 @@ def download_with_cookies(url, output_dir="downloads"):
                     thumb_path = None
             except Exception:
                 thumb_path = None
-            
+
         return {
             "title": info.get("title", "Video"),
             "duration": info.get("duration", 0),
@@ -140,10 +144,10 @@ async def yt_download_cmd(client: Client, message: Message):
             "⚠️ **Link toh do bhai!**\n\n"
             "**Example:** `/dl https://youtu.be/xxxxxx`"
         )
-    
+
     url = message.command[1].strip()
     status = await message.reply_text("🔎 **Video check kar raha hoon...**")
-    
+
     data = None
     try:
         # Check cookies status
@@ -152,14 +156,14 @@ async def yt_download_cmd(client: Client, message: Message):
             await status.edit_text("🍪 **Cookies Active! Downloading Video...**")
         else:
             await status.edit_text("⚠️ **No Cookies Found! Trying without auth...**")
-        
+
         # Background thread me download (bot hang nahi hoga)
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_with_cookies, url)
-            
+
         if not data or not os.path.exists(data["filepath"]):
             return await status.edit_text("❌ **Download fail ho gaya!** File save nahi ho payi.")
-            
+
         filepath = data["filepath"]
         thumb = data.get("thumb")
         file_size = os.path.getsize(filepath)
@@ -173,7 +177,7 @@ async def yt_download_cmd(client: Client, message: Message):
 
         await status.edit_text("📤 **Telegram pe upload ho raha hai...**")
         start_time = time.time()
-        
+
         cookie_status = "✅ Active" if data["cookie_used"] else "⚠️ Not Found"
         caption = (
             f"🎬 **{data['title']}**\n\n"
@@ -200,7 +204,7 @@ async def yt_download_cmd(client: Client, message: Message):
     except Exception as e:
         err_msg = str(e)
         print("DL Error:", err_msg)
-        
+
         if "Sign in to confirm" in err_msg or "bot" in err_msg.lower():
             await status.edit_text(
                 "❌ **YouTube Cookie Error!**\n\n"
@@ -210,7 +214,7 @@ async def yt_download_cmd(client: Client, message: Message):
             )
         else:
             await status.edit_text(f"❌ **Error:** `{err_msg[:350]}`")
-        
+
     finally:
         # 🧹 Server Cleanup (Storage full nahi hoga)
         try:
