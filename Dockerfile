@@ -8,22 +8,19 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY . /app
 
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-
-# Latest yt-dlp
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 RUN pip install --force-reinstall https://github.com/yt-dlp/yt-dlp/archive/refs/heads/master.tar.gz
 
-# 🔥🔥 EJS SOLVER PRE-DOWNLOAD (Build time pe, runtime pe nahi) 🔥🔥
-# Ye GitHub se JS scripts download karke /root/.cache/yt-dlp/ytdlp-ejs/ me save karta hai
-RUN mkdir -p /root/.cache/yt-dlp/ytdlp-ejs && \
-    curl -fsSL -o /root/.cache/yt-dlp/ytdlp-ejs/ejs.sandbox.bundle.js \
-        https://github.com/yt-dlp/ejs/releases/latest/download/ejs.sandbox.bundle.js && \
-    curl -fsSL -o /root/.cache/yt-dlp/ytdlp-ejs/ejs.wasm.bundle.js \
-        https://github.com/yt-dlp/ejs/releases/latest/download/ejs.wasm.bundle.js && \
-    echo "✅ EJS scripts downloaded:" && ls -la /root/.cache/yt-dlp/ytdlp-ejs/
+# 🔥 EJS scripts pre-download (yt-dlp CLI khud sahi URLs janta hai)
+RUN yt-dlp --remote-components ejs:github --js-runtimes nodejs \
+    --simulate "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 2>&1 || true
+
+# Verify cache
+RUN echo "=== EJS Cache ===" && \
+    find /root/.cache/yt-dlp/ -type f 2>/dev/null || echo "No cache" && \
+    ls -laR /root/.cache/yt-dlp/ 2>/dev/null || true
 
 COPY . .
 
