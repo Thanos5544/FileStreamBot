@@ -76,16 +76,36 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 COOKIE-BASED DOWNLOADER (1000% WORKING)
+# 🚀 4-LAYER RETRY DOWNLOADER (NEVER FAILS)
 # ==========================================
 def download_with_cookies(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
 
     cookie_path = find_cookies()
 
-    ydl_opts = {
-        # Android client = pre-merged MP4 (no FFmpeg needed)
-        'format': 'best[height<=720]/best',
+    # 4 alag format strategies — ek fail hua toh doosra try hoga
+    format_strategies = [
+        # Strategy 1: Best MP4 video + audio merge (needs FFmpeg)
+        {
+            'format': 'bestvideo*[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'merge_output_format': 'mp4',
+        },
+        # Strategy 2: Any best video + audio merge (needs FFmpeg)
+        {
+            'format': 'bestvideo*+bestaudio*/best',
+            'merge_output_format': 'mp4',
+        },
+        # Strategy 3: Single best stream, no merge (NO FFmpeg needed)
+        {
+            'format': 'best',
+        },
+        # Strategy 4: Ultimate fallback — whatever YouTube gives
+        {
+            'format': 'b',
+        },
+    ]
+
+    base_opts = {
         'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
@@ -102,37 +122,56 @@ def download_with_cookies(url, output_dir="downloads"):
         }
     }
 
-    # Cookie attach karo
     if cookie_path:
-        ydl_opts['cookiefile'] = cookie_path
+        base_opts['cookiefile'] = cookie_path
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
+    info = None
+    filename = None
+    last_error = None
 
-        # Thumbnail download manually (no FFmpeg needed)
-        thumb_path = None
-        thumb_url = info.get('thumbnail')
-        if thumb_url:
-            try:
-                thumb_path = f"{output_dir}/thumb_{info.get('id', 'pic')}.jpg"
-                r = requests.get(thumb_url, timeout=15)
-                if r.status_code == 200:
-                    with open(thumb_path, 'wb') as f:
-                        f.write(r.content)
-                else:
-                    thumb_path = None
-            except Exception:
+    for i, strategy in enumerate(format_strategies):
+        try:
+            print(f"🔄 Trying format strategy {i+1}: {strategy['format']}")
+            opts = {**base_opts, **strategy}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                # If merge_output_format was set, fix extension
+                if strategy.get('merge_output_format') and not filename.endswith('.mp4'):
+                    filename = filename.rsplit('.', 1)[0] + '.mp4'
+                print(f"✅ Strategy {i+1} succeeded!")
+                break
+        except Exception as e:
+            last_error = str(e)
+            print(f"❌ Strategy {i+1} failed: {last_error[:100]}")
+            continue
+
+    if not info or not filename or not os.path.exists(filename):
+        raise Exception(f"All 4 format strategies failed! Last error: {last_error}")
+
+    # Thumbnail download manually
+    thumb_path = None
+    thumb_url = info.get('thumbnail')
+    if thumb_url:
+        try:
+            thumb_path = f"{output_dir}/thumb_{info.get('id', 'pic')}.jpg"
+            r = requests.get(thumb_url, timeout=15)
+            if r.status_code == 200:
+                with open(thumb_path, 'wb') as f:
+                    f.write(r.content)
+            else:
                 thumb_path = None
+        except Exception:
+            thumb_path = None
 
-        return {
-            "title": info.get("title", "Video"),
-            "duration": info.get("duration", 0),
-            "filepath": filename,
-            "thumb": thumb_path,
-            "uploader": info.get("uploader", "Unknown"),
-            "cookie_used": bool(cookie_path)
-        }
+    return {
+        "title": info.get("title", "Video"),
+        "duration": info.get("duration", 0),
+        "filepath": filename,
+        "thumb": thumb_path,
+        "uploader": info.get("uploader", "Unknown"),
+        "cookie_used": bool(cookie_path)
+    }
 
 # ==========================================
 # 🤖 /dl or /yt COMMAND
@@ -150,14 +189,12 @@ async def yt_download_cmd(client: Client, message: Message):
 
     data = None
     try:
-        # Check cookies status
         cookie_file = find_cookies()
         if cookie_file:
             await status.edit_text("🍪 **Cookies Active! Downloading Video...**")
         else:
-            await status.edit_text("⚠️ **No Cookies Found! Trying without auth...**")
+            await status.edit_text("⚠️ **No Cookies! Trying without auth...**")
 
-        # Background thread me download (bot hang nahi hoga)
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_with_cookies, url)
 
@@ -168,12 +205,11 @@ async def yt_download_cmd(client: Client, message: Message):
         thumb = data.get("thumb")
         file_size = os.path.getsize(filepath)
 
-        # Telegram Bot 2GB Limit Check
         if file_size > 2000 * 1024 * 1024:
             os.remove(filepath)
             if thumb and os.path.exists(thumb):
                 os.remove(thumb)
-            return await status.edit_text("❌ **File 2GB se badi hai! Telegram bot allow nahi karta.**")
+            return await status.edit_text("❌ **File 2GB se badi hai! Telegram allow nahi karta.**")
 
         await status.edit_text("📤 **Telegram pe upload ho raha hai...**")
         start_time = time.time()
@@ -187,7 +223,6 @@ async def yt_download_cmd(client: Client, message: Message):
             f"⚡ **Downloaded via Bot**"
         )
 
-        # Video Send karna
         await client.send_video(
             chat_id=message.chat.id,
             video=filepath,
@@ -205,18 +240,16 @@ async def yt_download_cmd(client: Client, message: Message):
         err_msg = str(e)
         print("DL Error:", err_msg)
 
-        if "Sign in to confirm" in err_msg or "bot" in err_msg.lower():
+        if "Sign in to confirm" in err_msg:
             await status.edit_text(
-                "❌ **YouTube Cookie Error!**\n\n"
-                "⚠️ `cookies.txt` expire ho chuki hai ya sahi jagah nahi hai.\n\n"
-                "👉 **Fix:** Kiwi Browser se taza `cookies.txt` nikaal ke "
-                "bot ke **Main/Root Folder** me upload karo aur bot restart karo!"
+                "❌ **Cookie Expire Ho Gayi!**\n\n"
+                "👉 Kiwi Browser se naya `cookies.txt` nikaal ke "
+                "bot ke **Root Folder** me upload karo aur restart karo!"
             )
         else:
             await status.edit_text(f"❌ **Error:** `{err_msg[:350]}`")
 
     finally:
-        # 🧹 Server Cleanup (Storage full nahi hoga)
         try:
             if data and os.path.exists(data.get("filepath", "")):
                 os.remove(data["filepath"])
