@@ -2,6 +2,8 @@ import os
 import time
 import math
 import asyncio
+import shutil
+import subprocess
 import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -76,38 +78,91 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 BULLETPROOF DOWNLOADER (5-CLIENT RETRY)
+# 🔧 ENSURE JS RUNTIME (YouTube n-challenge fix)
+# ==========================================
+_js_checked = False
+
+def ensure_js_runtime():
+    global _js_checked
+    if _js_checked:
+        return
+    _js_checked = True
+
+    # Check Node.js
+    if shutil.which('node'):
+        try:
+            ver = subprocess.getoutput('node --version')
+            print(f"✅ Node.js found: {ver}")
+        except Exception:
+            print("✅ Node.js found")
+        return
+
+    # Check QuickJS
+    if shutil.which('qjs'):
+        print("✅ QuickJS found")
+        return
+
+    # Check Python quickjs module
+    try:
+        import quickjs
+        print("✅ QuickJS Python module found")
+        return
+    except ImportError:
+        pass
+
+    # Last resort: try apt-get install
+    print("📦 No JS runtime found! Installing Node.js via apt-get...")
+    try:
+        subprocess.run(['apt-get', 'update', '-qq'],
+                       capture_output=True, timeout=60)
+        subprocess.run(['apt-get', 'install', '-y', '-qq', 'nodejs'],
+                       capture_output=True, timeout=120)
+        if shutil.which('node'):
+            ver = subprocess.getoutput('node --version')
+            print(f"✅ Node.js installed via apt-get: {ver}")
+            return
+    except Exception as e:
+        print(f"❌ apt-get install failed: {e}")
+
+    print("⚠️ WARNING: No JS runtime! YouTube n-challenge will fail!")
+
+# ==========================================
+# 🚀 BULLETPROOF DOWNLOADER
 # ==========================================
 def download_with_cookies(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
+
+    # Ensure JS runtime is available
+    ensure_js_runtime()
+
     cookie_path = find_cookies()
 
-    # 5 alag client configs — ek fail toh doosra try
+    # Multiple client configs
     configs = [
-        # 1. WEB client + cookies (sabse reliable)
+        # 1. WEB + cookies (best with JS runtime)
         {
             'format': 'bv*+ba/b',
             'merge_output_format': 'mp4',
             'extractor_args': {'youtube': {'player_client': ['web']}},
         },
-        # 2. TV Embedded (no cookies needed, bot detection bypass)
+        # 2. TV Embedded
         {
             'format': 'bv*+ba/b',
             'merge_output_format': 'mp4',
             'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
         },
-        # 3. iOS client
+        # 3. iOS
         {
             'format': 'bv*+ba/b',
             'merge_output_format': 'mp4',
             'extractor_args': {'youtube': {'player_client': ['ios']}},
         },
-        # 4. Default (yt-dlp khud decide kare)
+        # 4. Default (no client override)
         {
             'format': 'bv*+ba/b',
             'merge_output_format': 'mp4',
         },
-        # 5. Last resort — single stream, no merge
+        # 5. Single stream fallback
         {
             'format': 'b',
         },
@@ -134,7 +189,8 @@ def download_with_cookies(url, output_dir="downloads"):
 
     for i, cfg in enumerate(configs):
         try:
-            client_name = cfg.get('extractor_args', {}).get('youtube', {}).get('player_client', ['default'])[0]
+            client_name = cfg.get('extractor_args', {}).get(
+                'youtube', {}).get('player_client', ['default'])[0]
             print(f"🔄 Try {i+1}/5 — Client: {client_name} | Format: {cfg['format']}")
             opts = {**base_opts, **cfg}
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -146,16 +202,10 @@ def download_with_cookies(url, output_dir="downloads"):
                 break
         except Exception as e:
             last_error = str(e)
-            print(f"❌ Try {i+1} failed: {last_error[:120]}")
+            print(f"❌ Try {i+1} failed: {last_error[:150]}")
             continue
 
     if not info or not filename or not os.path.exists(filename):
-        # Debug: available formats print karo
-        try:
-            with yt_dlp.YoutubeDL({'quiet': False, 'listformats': True, 'cookiefile': cookie_path} if cookie_path else {'quiet': False, 'listformats': True}) as ydl:
-                ydl.extract_info(url, download=False)
-        except Exception as dbg:
-            print(f"DEBUG formats: {dbg}")
         raise Exception(f"All 5 clients failed! Last: {last_error}")
 
     # Thumbnail
