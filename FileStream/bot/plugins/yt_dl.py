@@ -27,8 +27,8 @@ def start_bgutil_server():
         BGUTIL_PROC = subprocess.Popen(
             ['deno', 'run', '-A', 'src/main.ts'],
             cwd='/opt/bgutil/server',
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         for i in range(15):
             time.sleep(1)
@@ -44,7 +44,6 @@ def start_bgutil_server():
                 break
     except Exception as e:
         print(f"❌ bgutil start failed: {e}")
-    
     BGUTIL_PROC = None
     return False
 
@@ -78,9 +77,6 @@ async def progress(cur, tot, ud, msg, start):
         try: await msg.edit_text(f"⏳ **{ud}**\n\n{txt}")
         except Exception: pass
 
-# ==========================================
-# 🍪 FIND COOKIES
-# ==========================================
 def find_cookies():
     for p in ["cookies.txt", "./cookies.txt", "../cookies.txt",
               os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt")]:
@@ -89,15 +85,21 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 CLI DOWNLOADER (EJS + PO Token + Cookies = ALL)
+# 🚀 DOWNLOADER — NO DEADLOCK VERSION
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
     cookie_path = find_cookies()
+    output_file = os.path.join(output_dir, '_yt_info.txt')
+
+    # Clean old files
+    for f in os.listdir(output_dir):
+        fp = os.path.join(output_dir, f)
+        if os.path.isfile(fp):
+            os.remove(fp)
 
     cmd = [
         'yt-dlp',
-        '--verbose',
         '--remote-components', 'ejs:github',
         '--js-runtimes', 'nodejs',
         '-f', 'bv*+ba/b',
@@ -105,11 +107,8 @@ def download_video(url, output_dir="downloads"):
         '-o', f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         '--no-playlist',
         '--no-progress',
-        '--print', 'after_move:filepath=%(filepath)s',
-        '--print', 'after_move:title=%(title)s',
-        '--print', 'after_move:duration=%(duration)s',
-        '--print', 'after_move:uploader=%(uploader)s',
-        '--print', 'after_move:thumbnail=%(thumbnail)s',
+        '--no-warnings',
+        '--print', 'after_move:%(filepath)s|||%(title)s|||%(duration)s|||%(uploader)s|||%(thumbnail)s',
     ]
 
     if cookie_path:
@@ -117,36 +116,50 @@ def download_video(url, output_dir="downloads"):
 
     cmd.append(url)
 
-    print(f"🔄 Downloading with EJS + PO Token + Cookies...")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    print(f"🔄 Running yt-dlp (no verbose, no deadlock)...")
 
-    # Debug output
-    for line in (result.stdout + result.stderr).split('\n'):
-        ll = line.lower()
-        if any(k in ll for k in ['ejs', 'signature', 'challenge', 'pot', 'bgutil', 'format', 'error', 'download', 'cache']):
-            print(f"  | {line}")
+    # stdout → file, stderr → Koyeb logs (no buffer deadlock!)
+    with open(output_file, 'w') as fout:
+        result = subprocess.run(
+            cmd,
+            stdout=fout,
+            stderr=None,       # stderr goes to Koyeb logs directly
+            timeout=600        # 10 min timeout
+        )
 
     if result.returncode != 0:
-        raise Exception(result.stderr[-400:])
+        raise Exception(f"yt-dlp exited with code {result.returncode}. Check Koyeb logs for details.")
 
+    # Parse output file
     info = {}
-    for line in result.stdout.strip().split('\n'):
-        line = line.strip()
-        if '=' in line and not line.startswith('http') and not line.startswith('[debug]'):
-            key, _, val = line.partition('=')
-            info[key.strip()] = val.strip()
+    if os.path.exists(output_file):
+        with open(output_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if '|||' in line:
+                    parts = line.split('|||')
+                    if len(parts) >= 5:
+                        info['filepath'] = parts[0]
+                        info['title'] = parts[1]
+                        info['duration'] = parts[2]
+                        info['uploader'] = parts[3]
+                        info['thumbnail'] = parts[4]
+                    break
 
     filepath = info.get('filepath', '')
+
+    # Fallback: find newest mp4
     if not filepath or not os.path.exists(filepath):
         mp4s = [os.path.join(output_dir, f) for f in os.listdir(output_dir)
                 if f.endswith(('.mp4', '.webm', '.mkv'))]
         if mp4s:
             filepath = max(mp4s, key=os.path.getctime)
         else:
-            raise Exception("No video file found!")
+            raise Exception("No video file found after download!")
 
     print(f"✅ Downloaded: {filepath} ({os.path.getsize(filepath)} bytes)")
 
+    # Thumbnail
     thumb_path = None
     thumb_url = info.get('thumbnail', '')
     if thumb_url and thumb_url.startswith('http'):
@@ -185,7 +198,7 @@ async def yt_download_cmd(client: Client, message: Message):
     try:
         cf = find_cookies()
         server_ok = "✅" if BGUTIL_PROC and BGUTIL_PROC.poll() is None else "❌"
-        await status.edit_text(f"🍪 {'✅' if cf else '❌'} |  {server_ok} | ⬇️ **Downloading (EJS+POT+Cookie)...**")
+        await status.edit_text(f"🍪 {'✅' if cf else '❌'} |  {server_ok} | ️ **Downloading...**")
 
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_video, url)
@@ -222,7 +235,7 @@ async def yt_download_cmd(client: Client, message: Message):
         if "Sign in to confirm" in err:
             await status.edit_text("❌ **Cookie Expire!** Naya upload karo.")
         else:
-            await status.edit_text(f"❌ **Error:**\n```\n{err[:500]}\n```")
+            await status.edit_text(f"❌ **Error:** `{err[:400]}`")
     finally:
         try:
             if data and os.path.exists(data.get("filepath", "")): os.remove(data["filepath"])
