@@ -1,17 +1,18 @@
 import os
-import re
 import time
 import math
 import asyncio
-import aiohttp
+import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+import yt_dlp
 
 # ==========================================
 # 🛠️ HELPERS & PROGRESS BAR
 # ==========================================
 def humanbytes(size):
-    if not size: return ""
+    if not size:
+        return ""
     power = 2**10
     n = 0
     Dic_powerN = {0: ' ', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
@@ -23,7 +24,7 @@ def humanbytes(size):
 def time_formatter(milliseconds: int) -> str:
     seconds, milliseconds = divmod(int(milliseconds), 1000)
     minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(hours, 60)
+    hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
     tmp = ((str(days) + "d, ") if days else "") + \
         ((str(hours) + "h, ") if hours else "") + \
@@ -56,121 +57,78 @@ async def progress_for_pyrogram(current, total, ud_type, message, start_time):
         except Exception:
             pass
 
-def extract_yt_id(url):
-    match = re.search(r"(?:v=|\/|youtu\.be\/|shorts\/)([0-9A-Za-z_-]{11})", url)
-    return match.group(1) if match else None
+# ==========================================
+# 🍪 FIND COOKIES FILE
+# ==========================================
+def find_cookies():
+    """Bot ke root folder se cookies.txt dhundhta hai"""
+    possible_paths = [
+        "cookies.txt",
+        "./cookies.txt",
+        "../cookies.txt",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cookies.txt"),
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            print(f"✅ Cookies found at: {os.path.abspath(p)}")
+            return p
+    print("⚠️ cookies.txt NOT found anywhere!")
+    return None
 
 # ==========================================
-# 🚀 5-LAYER PIPED + INVIDIOUS + COBALT BYPASS ENGINE
-# Ye YouTube ke Server IP Ban ko 100% bypass karta hai!
+# 🚀 COOKIE-BASED DOWNLOADER (1000% WORKING)
 # ==========================================
-async def get_video_direct(url, output_dir="downloads"):
+def download_with_cookies(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
-    video_id = extract_yt_id(url)
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json"
+    cookie_path = find_cookies()
+
+    ydl_opts = {
+        # Pre-merged MP4 (Audio+Video already mixed) — NO FFmpeg needed
+        'format': 'best[ext=mp4]/best',
+        'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
+        'noplaylist': True,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
     }
 
-    direct_mp4_url = None
-    title = f"Video_{int(time.time())}"
+    # Cookie attach karo
+    if cookie_path:
+        ydl_opts['cookiefile'] = cookie_path
 
-    async with aiohttp.ClientSession(headers=headers) as session:
-        # --- LAYER 1: PIPED API MIRRORS (100% Working for Blocked Servers) ---
-        if video_id:
-            piped_mirrors = [
-                "https://pipedapi.kavin.rocks",
-                "https://pipedapi.tokhmi.xyz",
-                "https://api.piped.privacydev.net",
-            ]
-            for mirror in piped_mirrors:
-                try:
-                    async with session.get(f"{mirror}/streams/{video_id}", timeout=10) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            title = data.get("title", title)
-                            # Best MP4 stream jisme audio + video dono hon (<= 720p)
-                            streams = data.get("videoStreams", [])
-                            for stream in streams:
-                                if not stream.get("videoOnly") and stream.get("format") == "MP4":
-                                    direct_mp4_url = stream.get("url")
-                                    break
-                            if direct_mp4_url:
-                                break
-                except Exception:
-                    continue
-
-        # --- LAYER 2: INVIDIOUS API MIRRORS (Backup for YouTube) ---
-        if video_id and not direct_mp4_url:
-            invidious_mirrors = [
-                "https://inv.tux.zone",
-                "https://invidious.nerdvpn.de",
-                "https://invidious.perennialte.ch"
-            ]
-            for mirror in invidious_mirrors:
-                try:
-                    async with session.get(f"{mirror}/api/v1/videos/{video_id}", timeout=10) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            title = data.get("title", title)
-                            for fmt in data.get("formatStreams", []):
-                                if "mp4" in fmt.get("type", "").lower():
-                                    direct_mp4_url = fmt.get("url")
-                                    break
-                            if direct_mp4_url:
-                                break
-                except Exception:
-                    continue
-
-        # --- LAYER 3: COBALT v10 API (For Instagram / Shorts / TikTok / General) ---
-        if not direct_mp4_url:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+        
+        # Thumbnail download manually (no FFmpeg needed)
+        thumb_path = None
+        thumb_url = info.get('thumbnail')
+        if thumb_url:
             try:
-                cobalt_url = "https://api.cobalt.tools/"
-                post_headers = {
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "User-Agent": headers["User-Agent"]
-                }
-                payload = {"url": url, "videoQuality": "720"}
-                async with session.post(cobalt_url, json=payload, headers=post_headers, timeout=12) as resp:
-                    if resp.status == 200:
-                        res = await resp.json()
-                        direct_mp4_url = res.get("url")
+                thumb_path = f"{output_dir}/thumb_{info.get('id', 'pic')}.jpg"
+                r = requests.get(thumb_url, timeout=15)
+                if r.status_code == 200:
+                    with open(thumb_path, 'wb') as f:
+                        f.write(r.content)
+                else:
+                    thumb_path = None
             except Exception:
-                pass
-
-        # --- LAYER 4: TIKLYDOWN API (Ultimate Backup) ---
-        if not direct_mp4_url:
-            try:
-                td_url = f"https://api.tiklydown.eu.org/api/download?url={url}"
-                async with session.get(td_url, timeout=12) as resp:
-                    if resp.status == 200:
-                        res = await resp.json()
-                        title = res.get("title", title)
-                        direct_mp4_url = res.get("video", {}).get("url") or res.get("url")
-            except Exception:
-                pass
-
-        # --- DOWNLOADING FILE TO SERVER ---
-        if direct_mp4_url:
-            clean_title = re.sub(r'[\\/*?:"<>|]', "", title)[:40].strip() or "Video"
-            filename = f"{output_dir}/{clean_title}_{int(time.time())}.mp4"
+                thumb_path = None
             
-            async with session.get(direct_mp4_url, timeout=600) as file_resp:
-                if file_resp.status == 200:
-                    with open(filename, "wb") as f:
-                        while True:
-                            chunk = await file_resp.content.read(1024 * 1024) # 1MB Chunk
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                    return {
-                        "filepath": filename,
-                        "title": title,
-                        "uploader": "YouTube / Social Media"
-                    }
-    return None
+        return {
+            "title": info.get("title", "Video"),
+            "duration": info.get("duration", 0),
+            "filepath": filename,
+            "thumb": thumb_path,
+            "uploader": info.get("uploader", "Unknown"),
+            "cookie_used": bool(cookie_path)
+        }
 
 # ==========================================
 # 🤖 /dl or /yt COMMAND
@@ -184,36 +142,44 @@ async def yt_download_cmd(client: Client, message: Message):
         )
     
     url = message.command[1].strip()
-    status = await message.reply_text("🔎 **Video streams dhoondh raha hoon...**")
+    status = await message.reply_text("🔎 **Video check kar raha hoon...**")
     
     data = None
     try:
-        await status.edit_text("⬇️ **Downloading Video (Piped & Invidious Bypass)...**")
+        # Check cookies status
+        cookie_file = find_cookies()
+        if cookie_file:
+            await status.edit_text("🍪 **Cookies Active! Downloading Video...**")
+        else:
+            await status.edit_text("⚠️ **No Cookies Found! Trying without auth...**")
         
-        # 5-Layer Engine se direct MP4 file pull karega
-        data = await get_video_direct(url)
+        # Background thread me download (bot hang nahi hoga)
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, download_with_cookies, url)
             
-        if not data or not os.path.exists(data.get("filepath", "")):
-            return await status.edit_text(
-                "❌ **Download fail ho gaya!**\n\n"
-                "• Ho sakta hai video **Private** ya **Age-Restricted** ho.\n"
-                "• Ya phir YouTube ne temporary stream block kiya ho (2 min baad try karo)."
-            )
+        if not data or not os.path.exists(data["filepath"]):
+            return await status.edit_text("❌ **Download fail ho gaya!** File save nahi ho payi.")
             
         filepath = data["filepath"]
+        thumb = data.get("thumb")
         file_size = os.path.getsize(filepath)
 
         # Telegram Bot 2GB Limit Check
         if file_size > 2000 * 1024 * 1024:
             os.remove(filepath)
+            if thumb and os.path.exists(thumb):
+                os.remove(thumb)
             return await status.edit_text("❌ **File 2GB se badi hai! Telegram bot allow nahi karta.**")
 
         await status.edit_text("📤 **Telegram pe upload ho raha hai...**")
         start_time = time.time()
         
+        cookie_status = "✅ Active" if data["cookie_used"] else "⚠️ Not Found"
         caption = (
             f"🎬 **{data['title']}**\n\n"
+            f"👤 **Uploader:** `{data['uploader']}`\n"
             f"📦 **Size:** `{humanbytes(file_size)}`\n"
+            f"🍪 **Cookies:** `{cookie_status}`\n"
             f"⚡ **Downloaded via Bot**"
         )
 
@@ -222,6 +188,8 @@ async def yt_download_cmd(client: Client, message: Message):
             chat_id=message.chat.id,
             video=filepath,
             caption=caption,
+            duration=data.get("duration", 0),
+            thumb=thumb if thumb and os.path.exists(thumb) else None,
             supports_streaming=True,
             reply_to_message_id=message.id,
             progress=progress_for_pyrogram,
@@ -232,12 +200,23 @@ async def yt_download_cmd(client: Client, message: Message):
     except Exception as e:
         err_msg = str(e)
         print("DL Error:", err_msg)
-        await status.edit_text(f"❌ **Error:** `{err_msg[:300]}`")
+        
+        if "Sign in to confirm" in err_msg or "bot" in err_msg.lower():
+            await status.edit_text(
+                "❌ **YouTube Cookie Error!**\n\n"
+                "⚠️ `cookies.txt` expire ho chuki hai ya sahi jagah nahi hai.\n\n"
+                "👉 **Fix:** Kiwi Browser se taza `cookies.txt` nikaal ke "
+                "bot ke **Main/Root Folder** me upload karo aur bot restart karo!"
+            )
+        else:
+            await status.edit_text(f"❌ **Error:** `{err_msg[:350]}`")
         
     finally:
         # 🧹 Server Cleanup (Storage full nahi hoga)
         try:
             if data and os.path.exists(data.get("filepath", "")):
                 os.remove(data["filepath"])
+            if data and data.get("thumb") and os.path.exists(data["thumb"]):
+                os.remove(data["thumb"])
         except Exception:
             pass
