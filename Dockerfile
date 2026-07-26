@@ -1,6 +1,6 @@
 FROM python:3.11
 
-# Install FFmpeg + Node.js (n-challenge solver) + fonts
+# FFmpeg + Node.js + fonts
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     fonts-dejavu \
@@ -15,6 +15,9 @@ COPY . /app
 
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+
+# LATEST yt-dlp from GitHub (n-challenge EJS solver support)
+RUN pip install --force-reinstall https://github.com/yt-dlp/yt-dlp/archive/refs/heads/master.tar.gz
 
 COPY . .
 
