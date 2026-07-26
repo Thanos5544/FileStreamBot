@@ -22,6 +22,14 @@ def startup_check():
         except Exception as e:
             print(f"❌ {name}: NOT FOUND ({e})")
 
+    # Check EJS cache
+    ejs_dir = "/root/.cache/yt-dlp/ytdlp-ejs"
+    if os.path.exists(ejs_dir):
+        files = os.listdir(ejs_dir)
+        print(f"🟢 EJS Cache: {files}")
+    else:
+        print(f"❌ EJS Cache: NOT FOUND at {ejs_dir}")
+
 startup_check()
 
 # ==========================================
@@ -64,7 +72,7 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 DOWNLOADER (EJS + Cookies = NO po_token needed)
+# 🚀 DOWNLOADER (EJS Cached + Cookies)
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
@@ -78,14 +86,14 @@ def download_video(url, output_dir="downloads"):
         'quiet': False,
         'no_warnings': False,
         'nocheckcertificate': True,
-        # 🔥 YE LINE SABSE ZAROORI HAI — EJS solver GitHub se download karta hai
+        # EJS scripts already cached from Docker build
         'remote_components': ['ejs:github'],
     }
 
     if cookie_path:
         ydl_opts['cookiefile'] = cookie_path
 
-    print(f"🔄 Downloading with EJS + Cookies...")
+    print(f"🔄 Downloading with Cached EJS + Cookies...")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -128,7 +136,7 @@ async def yt_download_cmd(client: Client, message: Message):
 
     try:
         cf = find_cookies()
-        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ️ **Downloading (EJS Mode)...**")
+        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ️ **Downloading (Cached EJS)...**")
 
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_video, url)
