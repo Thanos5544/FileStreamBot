@@ -2,6 +2,7 @@ import os
 import time
 import math
 import asyncio
+import aiohttp
 import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -57,56 +58,94 @@ async def progress_for_pyrogram(current, total, ud_type, message, start_time):
             pass
 
 # ==========================================
-# 🚀 ULTRA-FAST DOWNLOADER (NO FFMPEG NEEDED)
+# 🌐 EXTERNAL WEB APIs (Y2Mate / Cobalt Style)
+# Ye server IP ban ko 100% bypass karte hain!
 # ==========================================
-def download_video_direct(url, output_dir="downloads"):
+async def get_video_via_external_api(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
+    direct_mp4_url = None
+    title = "YouTube Video"
     
-    # 'best[ext=mp4]' download karta hai wo video jisme AUDIO aur VIDEO pehle se mix ho.
-    # Isse FFmpeg ki zaroorat nahi padti aur error kabhi nahi aata!
+    async with aiohttp.ClientSession() as session:
+        # --- API 1: Cobalt Tools API (Best Open Source Downloader) ---
+        try:
+            api_url = "https://api.cobalt.tools/"
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            async with session.post(api_url, json={"url": url, "videoQuality": "720"}, headers=headers, timeout=15) as resp:
+                if resp.status == 200:
+                    res = await resp.json()
+                    direct_mp4_url = res.get("url")
+        except Exception as e:
+            print("API 1 (Cobalt) Failed:", e)
+
+        # --- API 2: VKR Worker API (Y2Mate Alternative) ---
+        if not direct_mp4_url:
+            try:
+                vkr_url = f"https://api.vkrdownloader.workers.dev/server?v={url}"
+                async with session.get(vkr_url, timeout=15) as resp:
+                    if resp.status == 200:
+                        res = await resp.json()
+                        title = res.get("title", title)
+                        # Find 720p or 480p mp4 link
+                        for fmt in res.get("formats", []):
+                            if fmt.get("ext") == "mp4" and fmt.get("url"):
+                                direct_mp4_url = fmt["url"]
+                                break
+            except Exception as e:
+                print("API 2 (VKR) Failed:", e)
+
+        # --- API 3: TiklyDown / Universal Downloader API ---
+        if not direct_mp4_url:
+            try:
+                td_url = f"https://api.tiklydown.eu.org/api/download?url={url}"
+                async with session.get(td_url, timeout=15) as resp:
+                    if resp.status == 200:
+                        res = await resp.json()
+                        title = res.get("title", title)
+                        direct_mp4_url = res.get("video", {}).get("url") or res.get("url")
+            except Exception as e:
+                print("API 3 (TiklyDown) Failed:", e)
+
+        # Agar kisi bhi API ne direct MP4 link de diya, toh usko download kar lo
+        if direct_mp4_url:
+            filename = f"{output_dir}/video_{int(time.time())}.mp4"
+            async with session.get(direct_mp4_url) as file_resp:
+                if file_resp.status == 200:
+                    with open(filename, "wb") as f:
+                        while True:
+                            chunk = await file_resp.content.read(1024 * 1024) # 1MB Chunk
+                            if not chunk: break
+                            f.write(chunk)
+                    return {"filepath": filename, "title": title, "duration": 0, "thumb": None, "uploader": "Web API Bypass"}
+    return None
+
+# ==========================================
+# 🛡️ METHOD 2: YT-DLP TV-EMBEDDED BYPASS
+# Agar Web APIs slow hon toh ye TV Client use karega
+# ==========================================
+def download_via_tvembedded(url, output_dir="downloads"):
+    os.makedirs(output_dir, exist_ok=True)
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
-        'no_warnings': True,
-        # Ye YouTube ko bolta hai ki hum iPhone/Android app se dekh rahe hain (No Cookie Error)
+        # Ye YouTube ko bolta hai ki hum Smart TV se video dekh rahe hain (No Cookie Error on Server IPs)
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'mweb', 'tvembedded'],
+                'player_client': ['tvembedded', 'android_vr'],
                 'skip': ['hls', 'dash']
             }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
-            'Accept-Language': 'en-US,en;q=0.9',
         }
     }
-
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-        
-        # Download Thumbnail directly via HTTP without using FFmpeg
-        thumb_path = None
-        thumb_url = info.get('thumbnail')
-        if thumb_url:
-            try:
-                thumb_path = f"{output_dir}/thumb_{info.get('id', 'pic')}.jpg"
-                r = requests.get(thumb_url, timeout=10)
-                if r.status_code == 200:
-                    with open(thumb_path, 'wb') as f:
-                        f.write(r.content)
-                else:
-                    thumb_path = None
-            except Exception:
-                thumb_path = None
-            
         return {
             "title": info.get("title", "Video"),
             "duration": info.get("duration", 0),
             "filepath": filename,
-            "thumb": thumb_path,
+            "thumb": None,
             "uploader": info.get("uploader", "Unknown")
         }
 
@@ -116,33 +155,32 @@ def download_video_direct(url, output_dir="downloads"):
 @Client.on_message(filters.command(["dl", "yt", "video"]) & (filters.private | filters.group))
 async def yt_download_cmd(client: Client, message: Message):
     if len(message.command) < 2:
-        return await message.reply_text(
-            "⚠️ **Link toh do bhai!**\n\n"
-            "**Example:** `/dl https://youtu.be/xxxxxx`"
-        )
+        return await message.reply_text("⚠️ **Link toh do bhai!**\n\n**Example:** `/dl https://youtu.be/xxxxxx`")
     
     url = message.command[1].strip()
     status = await message.reply_text("🔎 **Video find kar raha hoon...**")
     
     data = None
     try:
-        await status.edit_text("⬇️ **Downloading Video (Fast & Safe Mode)...**")
-        
-        # Background me download taaki bot hang na ho
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, download_video_direct, url)
+        # PEHLE: External Web APIs (Y2Mate / Cobalt Bypass) se try karega taaki IP block ka error na aaye
+        await status.edit_text("⚡ **Bypassing Server Ban via External Web API...**")
+        data = await get_video_via_external_api(url)
+            
+        # AGAR WEB API BUSY HAI: Toh Smart TV Client Bypass use karega
+        if not data or not os.path.exists(data.get("filepath", "")):
+            await status.edit_text("⬇️ **Web API Busy! Using Smart-TV Client Bypass...**")
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(None, download_via_tvembedded, url)
             
         if not data or not os.path.exists(data["filepath"]):
-            return await status.edit_text("❌ **Download fail ho gaya!** File save nahi ho payi.")
+            return await status.edit_text("❌ **Download fail ho gaya!** Link private ya broken ho sakta hai.")
             
         filepath = data["filepath"]
-        thumb = data.get("thumb")
         file_size = os.path.getsize(filepath)
 
         # Telegram Bot 2GB Limit Check
         if file_size > 2000 * 1024 * 1024:
             os.remove(filepath)
-            if thumb and os.path.exists(thumb): os.remove(thumb)
             return await status.edit_text("❌ **File 2GB se badi hai! Telegram bot allow nahi karta.**")
 
         await status.edit_text("📤 **Telegram pe upload ho raha hai...**")
@@ -152,7 +190,7 @@ async def yt_download_cmd(client: Client, message: Message):
             f"🎬 **{data['title']}**\n\n"
             f"👤 **Uploader:** `{data['uploader']}`\n"
             f"📦 **Size:** `{humanbytes(file_size)}`\n"
-            f"⚡ **Downloaded via Bot**"
+            f"⚡ **Downloaded via Multi-API Bot**"
         )
 
         # Video Send karna
@@ -161,7 +199,6 @@ async def yt_download_cmd(client: Client, message: Message):
             video=filepath,
             caption=caption,
             duration=data.get("duration", 0),
-            thumb=thumb if thumb and os.path.exists(thumb) else None,
             supports_streaming=True,
             reply_to_message_id=message.id,
             progress=progress_for_pyrogram,
@@ -170,13 +207,12 @@ async def yt_download_cmd(client: Client, message: Message):
         await status.delete()
 
     except Exception as e:
-        # Ab agar koi error aayega toh bot CHAT ME EXACT ERROR BATEYEGA taaki hume pata chale
         err_msg = str(e)
         print("DL Error:", err_msg)
         await status.edit_text(
             f"❌ **Download Failed!**\n\n"
-            f"**Reason:** `{err_msg[:350]}`\n\n"
-            f"*Note: Agar age-restricted ya private video hai toh nahi hogi.*"
+            f"**Reason:** `{err_msg[:300]}`\n\n"
+            f"*Note: Agar video age-restricted ya private hai toh nahi hogi.*"
         )
         
     finally:
@@ -184,7 +220,5 @@ async def yt_download_cmd(client: Client, message: Message):
         try:
             if data and os.path.exists(data.get("filepath", "")):
                 os.remove(data["filepath"])
-            if data and data.get("thumb") and os.path.exists(data["thumb"]):
-                os.remove(data["thumb"])
         except Exception:
             pass
