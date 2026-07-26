@@ -2,8 +2,6 @@ import os
 import time
 import math
 import asyncio
-import shutil
-import subprocess
 import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -74,146 +72,43 @@ def find_cookies():
         if os.path.exists(p):
             print(f"✅ Cookies found at: {os.path.abspath(p)}")
             return p
-    print("⚠️ cookies.txt NOT found anywhere!")
+    print("⚠️ cookies.txt NOT found!")
     return None
 
 # ==========================================
-# 🔧 ENSURE JS RUNTIME (YouTube n-challenge fix)
+# 🚀 DOWNLOADER (Node.js + FFmpeg + Cookies = 1000%)
 # ==========================================
-_js_checked = False
-
-def ensure_js_runtime():
-    global _js_checked
-    if _js_checked:
-        return
-    _js_checked = True
-
-    # Check Node.js
-    if shutil.which('node'):
-        try:
-            ver = subprocess.getoutput('node --version')
-            print(f"✅ Node.js found: {ver}")
-        except Exception:
-            print("✅ Node.js found")
-        return
-
-    # Check QuickJS
-    if shutil.which('qjs'):
-        print("✅ QuickJS found")
-        return
-
-    # Check Python quickjs module
-    try:
-        import quickjs
-        print("✅ QuickJS Python module found")
-        return
-    except ImportError:
-        pass
-
-    # Last resort: try apt-get install
-    print("📦 No JS runtime found! Installing Node.js via apt-get...")
-    try:
-        subprocess.run(['apt-get', 'update', '-qq'],
-                       capture_output=True, timeout=60)
-        subprocess.run(['apt-get', 'install', '-y', '-qq', 'nodejs'],
-                       capture_output=True, timeout=120)
-        if shutil.which('node'):
-            ver = subprocess.getoutput('node --version')
-            print(f"✅ Node.js installed via apt-get: {ver}")
-            return
-    except Exception as e:
-        print(f"❌ apt-get install failed: {e}")
-
-    print("⚠️ WARNING: No JS runtime! YouTube n-challenge will fail!")
-
-# ==========================================
-# 🚀 BULLETPROOF DOWNLOADER
-# ==========================================
-def download_with_cookies(url, output_dir="downloads"):
+def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
-
-    # Ensure JS runtime is available
-    ensure_js_runtime()
-
     cookie_path = find_cookies()
 
-    # Multiple client configs
-    configs = [
-        # 1. WEB + cookies (best with JS runtime)
-        {
-            'format': 'bv*+ba/b',
-            'merge_output_format': 'mp4',
-            'extractor_args': {'youtube': {'player_client': ['web']}},
-        },
-        # 2. TV Embedded
-        {
-            'format': 'bv*+ba/b',
-            'merge_output_format': 'mp4',
-            'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
-        },
-        # 3. iOS
-        {
-            'format': 'bv*+ba/b',
-            'merge_output_format': 'mp4',
-            'extractor_args': {'youtube': {'player_client': ['ios']}},
-        },
-        # 4. Default (no client override)
-        {
-            'format': 'bv*+ba/b',
-            'merge_output_format': 'mp4',
-        },
-        # 5. Single stream fallback
-        {
-            'format': 'b',
-        },
-    ]
-
-    base_opts = {
+    ydl_opts = {
+        'format': 'bv*+ba/b',
+        'merge_output_format': 'mp4',
         'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
     }
 
     if cookie_path:
-        base_opts['cookiefile'] = cookie_path
+        ydl_opts['cookiefile'] = cookie_path
 
-    info = None
-    filename = None
-    last_error = None
+    print(f"🔄 Downloading... Cookies={bool(cookie_path)}")
 
-    for i, cfg in enumerate(configs):
-        try:
-            client_name = cfg.get('extractor_args', {}).get(
-                'youtube', {}).get('player_client', ['default'])[0]
-            print(f"🔄 Try {i+1}/5 — Client: {client_name} | Format: {cfg['format']}")
-            opts = {**base_opts, **cfg}
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-                if cfg.get('merge_output_format') and not filename.endswith('.mp4'):
-                    filename = filename.rsplit('.', 1)[0] + '.mp4'
-                print(f"✅ SUCCESS with client: {client_name}")
-                break
-        except Exception as e:
-            last_error = str(e)
-            print(f"❌ Try {i+1} failed: {last_error[:150]}")
-            continue
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+        if not filename.endswith('.mp4'):
+            filename = filename.rsplit('.', 1)[0] + '.mp4'
 
-    if not info or not filename or not os.path.exists(filename):
-        raise Exception(f"All 5 clients failed! Last: {last_error}")
-
-    # Thumbnail
+    # Thumbnail download
     thumb_path = None
     thumb_url = info.get('thumbnail')
     if thumb_url:
         try:
-            thumb_path = f"{output_dir}/thumb_{info.get('id', 'pic')}.jpg"
+            thumb_path = f"{output_dir}/thumb_{int(time.time())}.jpg"
             r = requests.get(thumb_url, timeout=15)
             if r.status_code == 200:
                 with open(thumb_path, 'wb') as f:
@@ -252,10 +147,10 @@ async def yt_download_cmd(client: Client, message: Message):
         if cookie_file:
             await status.edit_text("🍪 **Cookies Active! Downloading Video...**")
         else:
-            await status.edit_text("⚠️ **No Cookies! Trying without auth...**")
+            await status.edit_text("⬇️ **Downloading Video...**")
 
         loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, download_with_cookies, url)
+        data = await loop.run_in_executor(None, download_video, url)
 
         if not data or not os.path.exists(data["filepath"]):
             return await status.edit_text("❌ **Download fail ho gaya!**")
@@ -299,9 +194,7 @@ async def yt_download_cmd(client: Client, message: Message):
         err_msg = str(e)
         print("DL Error:", err_msg)
         if "Sign in to confirm" in err_msg:
-            await status.edit_text(
-                "❌ **Cookie Expire!** Naya `cookies.txt` upload karo."
-            )
+            await status.edit_text("❌ **Cookie Expire!** Naya `cookies.txt` upload karo.")
         else:
             await status.edit_text(f"❌ **Error:** `{err_msg[:400]}`")
 
