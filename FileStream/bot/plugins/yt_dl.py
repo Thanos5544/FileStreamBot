@@ -2,28 +2,41 @@ import os
 import time
 import math
 import asyncio
+import subprocess
 import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import yt_dlp
 
 # ==========================================
+# 🟢 STARTUP CHECK
+# ==========================================
+def startup_check():
+    for name, cmd in [('Node.js', ['node', '--version']),
+                       ('FFmpeg', ['ffmpeg', '-version']),
+                       ('yt-dlp', ['yt-dlp', '--version'])]:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            v = (r.stdout or r.stderr).strip().split('\n')[0]
+            print(f"🟢 {name}: {v}")
+        except Exception as e:
+            print(f"❌ {name}: NOT FOUND ({e})")
+
+startup_check()
+
+# ==========================================
 # 🛠️ HELPERS
 # ==========================================
 def humanbytes(size):
     if not size: return ""
-    power = 2**10
-    n = 0
+    power = 2**10; n = 0
     D = {0: ' ', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
-    while size > power:
-        size /= power; n += 1
+    while size > power: size /= power; n += 1
     return str(round(size, 2)) + " " + D.get(n, '') + 'B'
 
-def time_formatter(ms):
+def time_fmt(ms):
     s, ms = divmod(int(ms), 1000)
-    m, s = divmod(s, 60)
-    h, m = divmod(m, 60)
-    d, h = divmod(h, 24)
+    m, s = divmod(s, 60); h, m = divmod(m, 60); d, h = divmod(h, 24)
     t = ((f"{d}d, ") if d else "") + ((f"{h}h, ") if h else "") + \
         ((f"{m}m, ") if m else "") + (f"{s}s" if s else "")
     return t or "0s"
@@ -35,7 +48,7 @@ async def progress(cur, tot, ud, msg, start):
         spd = cur / diff if diff > 0 else 0
         eta = (tot - cur) / spd * 1000 if spd > 0 else 0
         bar = "█" * int(pct // 10) + "░" * (10 - int(pct // 10))
-        txt = f"[{bar}] **{pct:.1f}%**\n{humanbytes(cur)} / {humanbytes(tot)}\nSpeed: {humanbytes(spd)}/s | ETA: {time_formatter(eta)}"
+        txt = f"[{bar}] **{pct:.1f}%**\n{humanbytes(cur)} / {humanbytes(tot)}\nSpeed: {humanbytes(spd)}/s | ETA: {time_fmt(eta)}"
         try: await msg.edit_text(f"⏳ **{ud}**\n\n{txt}")
         except Exception: pass
 
@@ -51,7 +64,7 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 DOWNLOADER (po_token + n-challenge AUTO)
+# 🚀 DOWNLOADER (EJS + Cookies = NO po_token needed)
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
@@ -62,21 +75,25 @@ def download_video(url, output_dir="downloads"):
         'merge_output_format': 'mp4',
         'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         'noplaylist': True,
-        'quiet': False,           # logs dikhe taaki debug ho
+        'quiet': False,
         'no_warnings': False,
         'nocheckcertificate': True,
-        # Plugin auto-detect ho jayega, kuch extra nahi chahiye
+        # 🔥 YE LINE SABSE ZAROORI HAI — EJS solver GitHub se download karta hai
+        'remote_components': ['ejs:github'],
     }
+
     if cookie_path:
         ydl_opts['cookiefile'] = cookie_path
 
-    print(f"🔄 Downloading with PO-Token plugin...")
+    print(f"🔄 Downloading with EJS + Cookies...")
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
         if not filename.endswith('.mp4'):
             filename = filename.rsplit('.', 1)[0] + '.mp4'
 
+    # Thumbnail
     thumb_path = None
     thumb_url = info.get('thumbnail')
     if thumb_url:
@@ -111,7 +128,7 @@ async def yt_download_cmd(client: Client, message: Message):
 
     try:
         cf = find_cookies()
-        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ⬇️ **Downloading (PO-Token Mode)...**")
+        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ️ **Downloading (EJS Mode)...**")
 
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_video, url)
