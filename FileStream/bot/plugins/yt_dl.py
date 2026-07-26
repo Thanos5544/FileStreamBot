@@ -2,10 +2,29 @@ import os
 import time
 import math
 import asyncio
+import subprocess
 import requests
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-import yt_dlp
+
+# ==========================================
+# 🟢 STARTUP DIAGNOSTICS (Logs me dikhega)
+# ==========================================
+def startup_check():
+    checks = {
+        'Node.js': ['node', '--version'],
+        'FFmpeg': ['ffmpeg', '-version'],
+        'yt-dlp': ['yt-dlp', '--version'],
+    }
+    for name, cmd in checks.items():
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            ver = r.stdout.strip().split('\n')[0] if r.stdout.strip() else r.stderr.strip().split('\n')[0]
+            print(f"🟢 {name}: {ver}")
+        except Exception as e:
+            print(f"❌ {name}: NOT FOUND ({e})")
+
+startup_check()
 
 # ==========================================
 # 🛠️ HELPERS & PROGRESS BAR
@@ -76,37 +95,68 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 DOWNLOADER (Node.js + FFmpeg + Cookies = 1000%)
+# 🚀 SUBPROCESS DOWNLOADER (CLI + EJS SOLVER)
+# Ye Node.js use karke n-challenge solve karta hai
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
     cookie_path = find_cookies()
 
-    ydl_opts = {
-        'format': 'bv*+ba/b',
-        'merge_output_format': 'mp4',
-        'outtmpl': f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
-        'noplaylist': True,
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
-    }
+    # yt-dlp CLI command with EJS n-challenge solver
+    cmd = [
+        'yt-dlp',
+        '--remote-components', 'ejs:github',
+        '-f', 'bv*+ba/b',
+        '--merge-output-format', 'mp4',
+        '-o', f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
+        '--no-playlist',
+        '--quiet',
+        '--no-warnings',
+        '--print', 'after_move:filepath=%(filepath)s',
+        '--print', 'after_move:title=%(title)s',
+        '--print', 'after_move:duration=%(duration)s',
+        '--print', 'after_move:uploader=%(uploader)s',
+        '--print', 'after_move:thumbnail=%(thumbnail)s',
+    ]
 
     if cookie_path:
-        ydl_opts['cookiefile'] = cookie_path
+        cmd.extend(['--cookies', cookie_path])
 
-    print(f"🔄 Downloading... Cookies={bool(cookie_path)}")
+    cmd.append(url)
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
-        if not filename.endswith('.mp4'):
-            filename = filename.rsplit('.', 1)[0] + '.mp4'
+    print(f"🔄 Running: yt-dlp --remote-components ejs:github ...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
-    # Thumbnail download
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        print(f"❌ yt-dlp failed: {stderr[-500:]}")
+        raise Exception(stderr[-400:])
+
+    # Parse --print output
+    info = {}
+    for line in result.stdout.strip().split('\n'):
+        line = line.strip()
+        if '=' in line and not line.startswith('http'):
+            key, _, val = line.partition('=')
+            info[key.strip()] = val.strip()
+
+    filepath = info.get('filepath', '')
+
+    # Fallback: find newest mp4 in output_dir
+    if not filepath or not os.path.exists(filepath):
+        mp4s = [os.path.join(output_dir, f) for f in os.listdir(output_dir)
+                if f.endswith(('.mp4', '.webm', '.mkv'))]
+        if mp4s:
+            filepath = max(mp4s, key=os.path.getctime)
+        else:
+            raise Exception("Download done but no video file found!")
+
+    print(f"✅ Downloaded: {filepath} ({os.path.getsize(filepath)} bytes)")
+
+    # Download thumbnail
     thumb_path = None
-    thumb_url = info.get('thumbnail')
-    if thumb_url:
+    thumb_url = info.get('thumbnail', '')
+    if thumb_url and thumb_url.startswith('http'):
         try:
             thumb_path = f"{output_dir}/thumb_{int(time.time())}.jpg"
             r = requests.get(thumb_url, timeout=15)
@@ -118,12 +168,17 @@ def download_video(url, output_dir="downloads"):
         except Exception:
             thumb_path = None
 
+    try:
+        duration = int(float(info.get('duration', '0')))
+    except Exception:
+        duration = 0
+
     return {
-        "title": info.get("title", "Video"),
-        "duration": info.get("duration", 0),
-        "filepath": filename,
+        "title": info.get('title', 'Video'),
+        "duration": duration,
+        "filepath": filepath,
         "thumb": thumb_path,
-        "uploader": info.get("uploader", "Unknown"),
+        "uploader": info.get('uploader', 'Unknown'),
         "cookie_used": bool(cookie_path)
     }
 
