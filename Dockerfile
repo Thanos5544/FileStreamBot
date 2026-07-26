@@ -1,34 +1,32 @@
 FROM python:3.11
 
-# FFmpeg + Node.js + fonts + git
+# FFmpeg + fonts + git + unzip
 RUN apt-get update && apt-get install -y \
-    ffmpeg fonts-dejavu fonts-liberation curl git \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+    ffmpeg fonts-dejavu fonts-liberation curl git unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# 🔥 Install Deno (bgutil server Deno pe chalta hai ab)
+RUN curl -fsSL https://deno.land/install.sh | sh
+ENV DENO_DIR=/root/.deno
+ENV PATH="/root/.deno/bin:${PATH}"
 
 WORKDIR /app
 
-# Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # Latest yt-dlp
 RUN pip install --force-reinstall https://github.com/yt-dlp/yt-dlp/archive/refs/heads/master.tar.gz
 
-# 🔥 bgutil POT provider PLUGIN (yt-dlp ko po_token deta hai)
+# 🔥 bgutil PLUGIN (Python side - yt-dlp ko PO token deta hai)
 RUN pip install "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/archive/master.tar.gz#subdirectory=plugin"
 
-# 🔥 bgutil POT provider SERVER (po_token generate karta hai)
+# 🔥 bgutil SERVER (Deno side - PO token generate karta hai)
 RUN git clone https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil && \
     cd /opt/bgutil/server && \
-    npm install && \
-    npm run build || echo "⚠️ Server build had warnings"
-
-# Verify
-RUN echo "=== bgutil server files ===" && ls -la /opt/bgutil/server/build/ 2>/dev/null || ls -la /opt/bgutil/server/dist/ 2>/dev/null || echo "Checking src..." && ls -la /opt/bgutil/server/src/ 2>/dev/null || true
+    deno cache src/main.ts && \
+    echo "✅ bgutil server cached!"
 
 COPY . .
-RUN chmod +x /app/start.sh
 
-CMD ["/app/start.sh"]
+CMD ["python", "-m", "FileStream"]
