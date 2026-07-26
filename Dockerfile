@@ -13,8 +13,17 @@ COPY . /app
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Latest yt-dlp from GitHub master
+# Latest yt-dlp
 RUN pip install --force-reinstall https://github.com/yt-dlp/yt-dlp/archive/refs/heads/master.tar.gz
+
+# 🔥🔥 EJS SOLVER PRE-DOWNLOAD (Build time pe, runtime pe nahi) 🔥🔥
+# Ye GitHub se JS scripts download karke /root/.cache/yt-dlp/ytdlp-ejs/ me save karta hai
+RUN mkdir -p /root/.cache/yt-dlp/ytdlp-ejs && \
+    curl -fsSL -o /root/.cache/yt-dlp/ytdlp-ejs/ejs.sandbox.bundle.js \
+        https://github.com/yt-dlp/ejs/releases/latest/download/ejs.sandbox.bundle.js && \
+    curl -fsSL -o /root/.cache/yt-dlp/ytdlp-ejs/ejs.wasm.bundle.js \
+        https://github.com/yt-dlp/ejs/releases/latest/download/ejs.wasm.bundle.js && \
+    echo "✅ EJS scripts downloaded:" && ls -la /root/.cache/yt-dlp/ytdlp-ejs/
 
 COPY . .
 
