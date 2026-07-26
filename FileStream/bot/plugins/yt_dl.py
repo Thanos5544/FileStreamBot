@@ -8,7 +8,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # ==========================================
-# 🟢 STARTUP CHECK
+# 🟢 STARTUP: EJS WARM-UP + CHECKS
 # ==========================================
 def startup_check():
     for name, cmd in [('Node.js', ['node', '--version']),
@@ -23,19 +23,32 @@ def startup_check():
 
     # Check EJS cache
     ejs_dir = "/root/.cache/yt-dlp/ytdlp-ejs"
-    if os.path.exists(ejs_dir):
+    if os.path.exists(ejs_dir) and os.listdir(ejs_dir):
         files = os.listdir(ejs_dir)
-        sizes = {f: os.path.getsize(os.path.join(ejs_dir, f)) for f in files}
-        print(f"🟢 EJS Cache: {sizes}")
+        print(f"🟢 EJS Cache: {files}")
     else:
-        print(f"❌ EJS Cache: NOT FOUND at {ejs_dir}")
-        # List all cache
-        cache = "/root/.cache/yt-dlp"
-        if os.path.exists(cache):
-            for r, d, fs in os.walk(cache):
-                for f in fs:
-                    fp = os.path.join(r, f)
-                    print(f"  Cache: {fp} ({os.path.getsize(fp)} bytes)")
+        print("⚠️ EJS not cached, warming up...")
+        warmup_ejs()
+
+def warmup_ejs():
+    """Bot startup pe EJS scripts download karo"""
+    try:
+        print("🔄 Warming up EJS solver...")
+        r = subprocess.run(
+            ['yt-dlp', '--remote-components', 'ejs:github', '--js-runtimes', 'nodejs',
+             '--simulate', '--quiet', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+            capture_output=True, text=True, timeout=60
+        )
+        print(f"🔄 Warmup stdout: {r.stdout[-200:]}")
+        print(f"🔄 Warmup stderr: {r.stderr[-200:]}")
+
+        ejs_dir = "/root/.cache/yt-dlp/ytdlp-ejs"
+        if os.path.exists(ejs_dir) and os.listdir(ejs_dir):
+            print(f"✅ EJS warmed up: {os.listdir(ejs_dir)}")
+        else:
+            print("❌ EJS warmup failed!")
+    except Exception as e:
+        print(f"❌ EJS warmup error: {e}")
 
 startup_check()
 
@@ -79,15 +92,15 @@ def find_cookies():
     return None
 
 # ==========================================
-# 🚀 CLI DOWNLOADER WITH VERBOSE DEBUG
+# 🚀 CLI SUBPROCESS DOWNLOADER (NOT Python API!)
 # ==========================================
 def download_video(url, output_dir="downloads"):
     os.makedirs(output_dir, exist_ok=True)
     cookie_path = find_cookies()
 
+    # CLI command — NOT Python API
     cmd = [
         'yt-dlp',
-        '--verbose',
         '--cache-dir', '/root/.cache/yt-dlp',
         '--remote-components', 'ejs:github',
         '--js-runtimes', 'nodejs',
@@ -96,6 +109,7 @@ def download_video(url, output_dir="downloads"):
         '-o', f'{output_dir}/%(title).50s_%(id)s.%(ext)s',
         '--no-playlist',
         '--no-progress',
+        '--no-warnings',
         '--print', 'after_move:filepath=%(filepath)s',
         '--print', 'after_move:title=%(title)s',
         '--print', 'after_move:duration=%(duration)s',
@@ -108,15 +122,18 @@ def download_video(url, output_dir="downloads"):
 
     cmd.append(url)
 
-    print(f"🔄 CMD: {' '.join(cmd)}")
+    print(f"🔄 Running CLI: {' '.join(cmd[:8])}...")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
-    # Print FULL output for debugging
-    print(f"=== STDOUT ===\n{result.stdout[-1000:]}")
-    print(f"=== STDERR ===\n{result.stderr[-1000:]}")
+    # Print debug output
+    if result.stderr:
+        # Only print important lines
+        for line in result.stderr.split('\n'):
+            if any(k in line.lower() for k in ['error', 'warning', 'ejs', 'challenge', 'signature', 'format', 'download']):
+                print(f"  [yt-dlp] {line}")
 
     if result.returncode != 0:
-        raise Exception(result.stderr[-400:])
+        raise Exception(result.stderr[-500:])
 
     # Parse --print output
     info = {}
@@ -128,16 +145,18 @@ def download_video(url, output_dir="downloads"):
 
     filepath = info.get('filepath', '')
 
+    # Fallback: find newest video file
     if not filepath or not os.path.exists(filepath):
-        mp4s = [os.path.join(output_dir, f) for f in os.listdir(output_dir)
+        vids = [os.path.join(output_dir, f) for f in os.listdir(output_dir)
                 if f.endswith(('.mp4', '.webm', '.mkv'))]
-        if mp4s:
-            filepath = max(mp4s, key=os.path.getctime)
+        if vids:
+            filepath = max(vids, key=os.path.getctime)
         else:
-            raise Exception("No video file found after download!")
+            raise Exception("No video file found!")
 
     print(f"✅ Downloaded: {filepath} ({os.path.getsize(filepath)} bytes)")
 
+    # Thumbnail
     thumb_path = None
     thumb_url = info.get('thumbnail', '')
     if thumb_url and thumb_url.startswith('http'):
@@ -175,7 +194,7 @@ async def yt_download_cmd(client: Client, message: Message):
 
     try:
         cf = find_cookies()
-        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ️ **Downloading (EJS + Node.js)...**")
+        await status.edit_text(f"🍪 Cookies: {'✅' if cf else '❌'} | ️ **Downloading (CLI + EJS)...**")
 
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, download_video, url)
