@@ -2,15 +2,14 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 import yt_dlp
 import os
-import time
 
 @Client.on_message(filters.command("yt") & filters.private)
 async def yt_download(bot, message):
     if len(message.command) < 2:
         return await message.reply(
             "**📥 YouTube Downloader**\n\n"
-            "Usage: `/yt <link>`\n"
-            "Example: `/yt https://youtu.be/xxxxx`"
+            "**Usage:** `/yt <link>`\n"
+            "**Example:** `/yt https://youtu.be/xxxxx`"
         )
     
     url = message.command[1]
@@ -31,7 +30,6 @@ async def yt_download(bot, message):
             title = info.get('title', 'Video')
             duration = info.get('duration', 0)
         
-        # File size check (2GB limit)
         size = os.path.getsize(filename)
         if size > 2097152000:
             await status.edit("❌ File too large (>2GB)")
@@ -42,7 +40,7 @@ async def yt_download(bot, message):
         
         await message.reply_video(
             video=filename,
-            caption=f"📹 **{title}**\n💾 Size: {get_size(size)}",
+            caption=f"📹 **{title}**",
             duration=duration,
             supports_streaming=True
         )
@@ -62,7 +60,7 @@ async def yt_download(bot, message):
 @Client.on_message(filters.command("ytaudio") & filters.private)
 async def yt_audio(bot, message):
     if len(message.command) < 2:
-        return await message.reply("Usage: `/ytaudio <link>`")
+        return await message.reply("**Usage:** `/ytaudio <link>`")
     
     url = message.command[1]
     status = await message.reply("⏳ Downloading audio...")
@@ -99,10 +97,3 @@ async def yt_audio(bot, message):
         
     except Exception as e:
         await status.edit(f"❌ Error: `{str(e)}`")
-
-
-def get_size(bytes):
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if bytes < 1024.0:
-            return f"{bytes:.2f} {unit}"
-        bytes /= 1024.0
