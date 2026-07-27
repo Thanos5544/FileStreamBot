@@ -9,12 +9,3 @@ requests
 jinja2
 psutil
 Pillow
-pyrogram
-tgcrypto
-aiofiles
-aiohttp
-requests
-python-dotenv
-motor
-dnspython
-yt-dlp
