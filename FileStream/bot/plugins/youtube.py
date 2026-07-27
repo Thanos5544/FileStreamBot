@@ -20,16 +20,19 @@ async def yt_download(bot, message):
         ydl_opts = {
             'format': '(bv*[height<=720]+ba/b[height<=720]/bv*+ba/b)',
             'outtmpl': '/tmp/%(id)s.%(ext)s',
-            'restrictfilenames': True,
-            'noplaylist': True,
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'logtostderr': False,
             'quiet': True,
             'no_warnings': True,
-            'default_search': 'auto',
-            'source_address': '0.0.0.0',
         }
+        
+        # Try cookies.txt first, then browser cookies
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
+        else:
+            # Try to use browser cookies automatically
+            try:
+                ydl_opts['cookiesfrombrowser'] = ('chrome',)
+            except:
+                pass
         
         with yt_dlp.YoutubeDL(ydl_opts) as ytdl:
             info = ytdl.extract_info(url, download=True)
@@ -61,10 +64,14 @@ async def yt_download(bot, message):
         
     except Exception as e:
         error_msg = str(e)
-        if "Requested format is not available" in error_msg:
-            await status.edit("❌ Video format not available. Try another video or contact admin.")
+        if "Sign in to confirm" in error_msg or "bot" in error_msg:
+            await status.edit(
+                "❌ **YouTube needs authentication!**\n\n"
+                "Please add `cookies.txt` file to the bot.\n"
+                "See: /help for instructions"
+            )
         else:
-            await status.edit(f"❌ Error: `{error_msg[:200]}`")
+            await status.edit(f"❌ Error: `{error_msg[:150]}`")
         
         if filename and os.path.exists(filename):
             try:
@@ -91,11 +98,17 @@ async def yt_audio(bot, message):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'restrictfilenames': True,
-            'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
         }
+        
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
+        else:
+            try:
+                ydl_opts['cookiesfrombrowser'] = ('chrome',)
+            except:
+                pass
         
         with yt_dlp.YoutubeDL(ydl_opts) as ytdl:
             info = ytdl.extract_info(url, download=True)
@@ -115,50 +128,12 @@ async def yt_audio(bot, message):
         await status.delete()
         
     except Exception as e:
-        await status.edit(f"❌ Error: `{str(e)[:200]}`")
-        if filename and os.path.exists(filename):
-            try:
-                os.remove(filename)
-            except:
-                pass
-
-
-@Client.on_message(filters.command("ytdl") & filters.private)
-async def yt_simple(bot, message):
-    """Backup command - downloads whatever format available"""
-    if len(message.command) < 2:
-        return await message.reply("**Usage:** `/ytdl <link>`")
-    
-    url = message.command[1]
-    status = await message.reply("⏳ Downloading (any format)...")
-    
-    filename = None
-    try:
-        ydl_opts = {
-            'format': 'best',  # Simple - jo bhi best mile
-            'outtmpl': '/tmp/%(id)s.%(ext)s',
-            'quiet': True,
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ytdl:
-            info = ytdl.extract_info(url, download=True)
-            filename = ytdl.prepare_filename(info)
-            title = info.get('title', 'Video')
-        
-        await status.edit("⏫ Uploading...")
-        
-        # Check if video or audio
-        ext = filename.split('.')[-1].lower()
-        if ext in ['mp4', 'mkv', 'webm', 'avi']:
-            await message.reply_video(video=filename, caption=f"📹 **{title}**")
+        error_msg = str(e)
+        if "Sign in" in error_msg:
+            await status.edit("❌ Cookies required! Contact admin.")
         else:
-            await message.reply_document(document=filename, caption=f"📄 **{title}**")
+            await status.edit(f"❌ Error: `{error_msg[:150]}`")
         
-        os.remove(filename)
-        await status.delete()
-        
-    except Exception as e:
-        await status.edit(f"❌ Error: `{str(e)[:200]}`")
         if filename and os.path.exists(filename):
             try:
                 os.remove(filename)
