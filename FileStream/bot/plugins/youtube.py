@@ -15,10 +15,12 @@ async def yt_download(bot, message):
     url = message.command[1]
     status = await message.reply("⏳ Downloading...")
     
+    filename = None
     try:
         ydl_opts = {
-            'format': 'best[height<=720][ext=mp4]',
+            'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best',
             'outtmpl': '/tmp/%(title)s.%(ext)s',
+            'merge_output_format': 'mp4',
             'quiet': True,
             'no_warnings': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
@@ -50,11 +52,11 @@ async def yt_download(bot, message):
         
     except Exception as e:
         await status.edit(f"❌ Error: `{str(e)}`")
-        try:
-            if os.path.exists(filename):
+        if filename and os.path.exists(filename):
+            try:
                 os.remove(filename)
-        except:
-            pass
+            except:
+                pass
 
 
 @Client.on_message(filters.command("ytaudio") & filters.private)
@@ -65,6 +67,7 @@ async def yt_audio(bot, message):
     url = message.command[1]
     status = await message.reply("⏳ Downloading audio...")
     
+    filename = None
     try:
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -75,6 +78,7 @@ async def yt_audio(bot, message):
                 'preferredquality': '192',
             }],
             'quiet': True,
+            'no_warnings': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
         }
         
@@ -97,3 +101,8 @@ async def yt_audio(bot, message):
         
     except Exception as e:
         await status.edit(f"❌ Error: `{str(e)}`")
+        if filename and os.path.exists(filename):
+            try:
+                os.remove(filename)
+            except:
+                pass
