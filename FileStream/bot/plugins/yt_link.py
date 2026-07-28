@@ -1,7 +1,6 @@
 """
 YouTube Link Generator Plugin
-Generates direct download links - No data usage!
-Simple & Clean
+Direct clickable download buttons!
 """
 
 from pyrogram import Client, filters
@@ -18,12 +17,7 @@ async def youtube_link_generator(client: Client, message: Message):
     if len(message.command) < 2:
         help_text = (
             "**🔗 YouTube Link Generator**\n\n"
-            "**Usage:**\n"
-            "`/ytlink <YouTube URL>`\n\n"
-            "**Features:**\n"
-            "✅ Direct download links\n"
-            "✅ No bot data usage\n"
-            "✅ Audio option available\n\n"
+            "**Usage:** `/ytlink <YouTube URL>`\n\n"
             "**Example:**\n"
             "`/ytlink https://youtu.be/dQw4w9WgXcQ`"
         )
@@ -31,9 +25,8 @@ async def youtube_link_generator(client: Client, message: Message):
     
     url = message.command[1]
     
-    # Validate URL
     if not any(x in url for x in ['youtube.com', 'youtu.be']):
-        return await message.reply_text("❌ Invalid YouTube URL!\n\nSupported: youtube.com, youtu.be")
+        return await message.reply_text("❌ Invalid YouTube URL!")
     
     status = await message.reply_text("⏳ **Generating link...**")
     
@@ -42,13 +35,7 @@ async def youtube_link_generator(client: Client, message: Message):
         result = await get_video_link(url)
         
         if not result:
-            return await status.edit_text(
-                "❌ **Failed to generate link!**\n\n"
-                "Possible reasons:\n"
-                "• Invalid or private video\n"
-                "• Deleted video\n"
-                "• Try another link"
-            )
+            return await status.edit_text("❌ **Failed to generate link!**\n\nTry another video.")
         
         title = result['title']
         duration = result['duration']
@@ -59,19 +46,18 @@ async def youtube_link_generator(client: Client, message: Message):
         secs = duration % 60
         dur_str = f"{mins}:{secs:02d}"
         
-        # Create message with clickable link
+        # Create message
         link_text = (
             f"**📹 {title}**\n\n"
             f"⏱️ **Duration:** {dur_str}\n\n"
-            f"**🔗 Download Link:**\n"
-            f"[Click Here to Download]({link})\n\n"
+            f"**Click button below to download:**\n\n"
             f"⏱️ Valid for 6 hours\n"
-            f"💡 Click → Browser → Download\n\n"
             f"✅ No bot data used!"
         )
         
-        # Add audio button
+        # Create CLICKABLE buttons
         buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Download Video", url=link)],
             [InlineKeyboardButton("🎵 Get Audio Link", callback_data=f"aud:{message.id}")]
         ])
         
@@ -79,11 +65,10 @@ async def youtube_link_generator(client: Client, message: Message):
         client.yt_cache = getattr(client, 'yt_cache', {})
         client.yt_cache[message.id] = url
         
-        await status.edit_text(link_text, reply_markup=buttons, disable_web_page_preview=True)
+        await status.edit_text(link_text, reply_markup=buttons)
         
     except Exception as e:
-        error_msg = str(e)[:150]
-        await status.edit_text(f"❌ **Error:**\n`{error_msg}`")
+        await status.edit_text(f"❌ Error: {str(e)[:100]}")
 
 
 # ========== AUDIO CALLBACK ==========
@@ -99,7 +84,7 @@ async def audio_callback(client: Client, callback: CallbackQuery):
     url = cache.get(msg_id)
     
     if not url:
-        return await callback.answer("❌ Session expired! Send /ytlink again.", show_alert=True)
+        return await callback.answer("❌ Expired! Send /ytlink again.", show_alert=True)
     
     await callback.answer("⏬ Generating audio link...", show_alert=False)
     
@@ -111,29 +96,32 @@ async def audio_callback(client: Client, callback: CallbackQuery):
         result = await get_audio_link(url)
         
         if not result:
-            return await msg.edit_text("❌ **Failed to generate audio link!**")
+            return await msg.edit_text("❌ Failed to generate audio link!")
         
         title = result['title']
         link = result['link']
         
-        # Create audio message
+        # Create audio message with button
         audio_text = (
             f"**🎵 {title}**\n\n"
-            f"**🔗 Audio Link (MP3):**\n"
-            f"[Click Here to Download]({link})\n\n"
+            f"**Click button below to download MP3:**\n\n"
             f"⏱️ Valid for 6 hours\n"
-            f"💡 Click → Browser → Download\n\n"
             f"✅ No bot data used!"
         )
         
-        await msg.edit_text(audio_text, disable_web_page_preview=True)
+        # Audio download button
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Download Audio (MP3)", url=link)]
+        ])
+        
+        await msg.edit_text(audio_text, reply_markup=buttons)
         
         # Remove from cache
         if msg_id in cache:
             del cache[msg_id]
         
     except Exception as e:
-        await msg.edit_text(f"❌ **Error:**\n`{str(e)[:100]}`")
+        await msg.edit_text(f"❌ Error: {str(e)[:100]}")
 
 
 # ========== HELPER FUNCTIONS ==========
@@ -144,8 +132,7 @@ async def get_video_link(url: str) -> dict:
     opts = {
         'format': 'best[height<=720]',
         'quiet': True,
-        'no_warnings': True,
-        'extract_flat': False
+        'no_warnings': True
     }
     
     try:
@@ -161,14 +148,9 @@ async def get_video_link(url: str) -> dict:
                 }
         
         result = await loop.run_in_executor(None, extract)
-        
-        if result and result['link']:
-            return result
-        else:
-            return None
+        return result if result and result['link'] else None
             
-    except Exception as e:
-        print(f"Video link error: {e}")
+    except:
         return None
 
 
@@ -193,45 +175,26 @@ async def get_audio_link(url: str) -> dict:
                 }
         
         result = await loop.run_in_executor(None, extract)
-        
-        if result and result['link']:
-            return result
-        else:
-            return None
+        return result if result and result['link'] else None
             
-    except Exception as e:
-        print(f"Audio link error: {e}")
+    except:
         return None
 
 
-# ========== HELP COMMAND ==========
+# ========== HELP ==========
 
 @Client.on_message(filters.command("ythelp") & filters.private)
-async def yt_help_command(client: Client, message: Message):
-    """YouTube link generator help"""
-    
+async def yt_help(client: Client, message: Message):
     help_text = (
         "**📚 YouTube Link Generator**\n\n"
-        "**Command:**\n"
-        "`/ytlink <YouTube URL>`\n\n"
-        "**How it works:**\n"
+        "`/ytlink <URL>` - Generate download links\n\n"
+        "**How to use:**\n"
         "1. Send YouTube link\n"
-        "2. Get direct download link\n"
-        "3. Click to download in browser\n"
-        "4. No bot data used! ✅\n\n"
-        "**Features:**\n"
-        "✅ Best quality (up to 720p)\n"
-        "✅ Audio MP3 option\n"
-        "✅ Fast & reliable\n"
-        "✅ Zero bot data usage\n\n"
-        "**Example:**\n"
-        "`/ytlink https://youtu.be/dQw4w9WgXcQ`\n\n"
-        "💡 **Tip:** Links expire after 6 hours"
+        "2. Click download button\n"
+        "3. Browser opens → Download starts\n\n"
+        "✅ No bot data used!"
     )
-    
     await message.reply_text(help_text)
 
 
-# ========== PLUGIN LOADED ==========
-
-print("✅ YouTube Link Generator Plugin Loaded!")
+print("✅ YouTube Link Generator (Button Version) Loaded!")
