@@ -9,4 +9,3 @@ requests
 jinja2
 psutil
 Pillow
-yt-dlp
