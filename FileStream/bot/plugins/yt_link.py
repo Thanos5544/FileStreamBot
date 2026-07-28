@@ -1,23 +1,32 @@
 """
-YouTube Link Generator Plugin
-Direct clickable download buttons!
+YouTube Link Generator - Complete with Quality Selection
+Using Cobalt API for maximum success rate
 """
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-import yt_dlp
-import asyncio
+import aiohttp
 
-# ========== MAIN COMMAND ==========
+COBALT_API = "https://api.cobalt.tools/api/json"
+
+# Store user video data
+video_cache = {}
+
+# ==================== MAIN COMMAND ====================
 
 @Client.on_message(filters.command("ytlink") & filters.private)
 async def youtube_link_generator(client: Client, message: Message):
-    """Generate YouTube direct download link"""
+    """YouTube link generator with quality selection"""
     
     if len(message.command) < 2:
         help_text = (
             "**🔗 YouTube Link Generator**\n\n"
-            "**Usage:** `/ytlink <YouTube URL>`\n\n"
+            "**Usage:**\n"
+            "`/ytlink <YouTube URL>`\n\n"
+            "**Features:**\n"
+            "✅ Quality selection (360p - Max)\n"
+            "✅ Audio MP3 download\n"
+            "✅ No bot data usage\n\n"
             "**Example:**\n"
             "`/ytlink https://youtu.be/dQw4w9WgXcQ`"
         )
@@ -25,176 +34,298 @@ async def youtube_link_generator(client: Client, message: Message):
     
     url = message.command[1]
     
+    # Validate URL
     if not any(x in url for x in ['youtube.com', 'youtu.be']):
-        return await message.reply_text("❌ Invalid YouTube URL!")
+        return await message.reply_text("❌ Invalid YouTube URL!\n\nSupported: youtube.com, youtu.be")
     
-    status = await message.reply_text("⏳ **Generating link...**")
+    status = await message.reply_text("⏳ **Processing...**")
     
     try:
-        # Get video info and link
-        result = await get_video_link(url)
+        # Store URL
+        user_id = message.from_user.id
+        video_cache[user_id] = {'url': url}
         
-        if not result:
-            return await status.edit_text("❌ **Failed to generate link!**\n\nTry another video.")
-        
-        title = result['title']
-        duration = result['duration']
-        link = result['link']
-        
-        # Format duration
-        mins = duration // 60
-        secs = duration % 60
-        dur_str = f"{mins}:{secs:02d}"
-        
-        # Create message
-        link_text = (
-            f"**📹 {title}**\n\n"
-            f"⏱️ **Duration:** {dur_str}\n\n"
-            f"**Click button below to download:**\n\n"
-            f"⏱️ Valid for 6 hours\n"
-            f"✅ No bot data used!"
-        )
-        
-        # Create CLICKABLE buttons
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📥 Download Video", url=link)],
-            [InlineKeyboardButton("🎵 Get Audio Link", callback_data=f"aud:{message.id}")]
-        ])
-        
-        # Store URL for audio callback
-        client.yt_cache = getattr(client, 'yt_cache', {})
-        client.yt_cache[message.id] = url
-        
-        await status.edit_text(link_text, reply_markup=buttons)
+        # Show quality selection buttons
+        await show_quality_options(status, user_id)
         
     except Exception as e:
         await status.edit_text(f"❌ Error: {str(e)[:100]}")
 
 
-# ========== AUDIO CALLBACK ==========
+def show_quality_options(message, user_id: int):
+    """Show quality selection buttons"""
+    
+    text = (
+        "**📹 YouTube Video**\n\n"
+        "**Select Quality:**\n\n"
+        "💡 Higher quality = larger file size\n"
+        "✅ No bot data used!"
+    )
+    
+    # Quality buttons
+    buttons = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🎬 Max Quality", callback_data=f"ytq:max:{user_id}"),
+            InlineKeyboardButton("📺 720p HD", callback_data=f"ytq:720:{user_id}")
+        ],
+        [
+            InlineKeyboardButton("📱 480p", callback_data=f"ytq:480:{user_id}"),
+            InlineKeyboardButton("📹 360p", callback_data=f"ytq:360:{user_id}")
+        ],
+        [
+            InlineKeyboardButton("🎵 Audio Only (MP3)", callback_data=f"ytq:audio:{user_id}")
+        ]
+    ])
+    
+    return message.edit_text(text, reply_markup=buttons)
 
-@Client.on_callback_query(filters.regex(r"^aud:"))
-async def audio_callback(client: Client, callback: CallbackQuery):
-    """Handle audio link request"""
+
+# ==================== QUALITY CALLBACK ====================
+
+@Client.on_callback_query(filters.regex(r"^ytq:"))
+async def quality_callback_handler(client: Client, callback: CallbackQuery):
+    """Handle quality selection"""
     
-    msg_id = int(callback.data.split(":")[1])
+    data = callback.data.split(":")
+    quality = data[1]
+    user_id = int(data[2])
     
-    # Get URL from cache
-    cache = getattr(client, 'yt_cache', {})
-    url = cache.get(msg_id)
+    # Verify user
+    if callback.from_user.id != user_id:
+        return await callback.answer("❌ Not for you!", show_alert=True)
     
-    if not url:
+    # Check cache
+    if user_id not in video_cache:
         return await callback.answer("❌ Expired! Send /ytlink again.", show_alert=True)
     
-    await callback.answer("⏬ Generating audio link...", show_alert=False)
+    url = video_cache[user_id]['url']
+    
+    await callback.answer(f"⏬ Generating {quality} link...", show_alert=False)
     
     msg = callback.message
-    await msg.edit_text("⏳ **Generating audio link...**")
+    await msg.edit_text(f"⏳ **Generating {quality} link...**")
     
     try:
-        # Get audio link
-        result = await get_audio_link(url)
+        # Generate link based on quality
+        if quality == "audio":
+            download_url = await get_audio_link(url)
+            quality_text = "Audio (MP3)"
+        else:
+            download_url = await get_video_link(url, quality)
+            quality_text = quality.upper()
         
-        if not result:
-            return await msg.edit_text("❌ Failed to generate audio link!")
+        if not download_url:
+            # Failed - show retry options
+            error_text = (
+                f"❌ **Failed to generate {quality_text} link!**\n\n"
+                "**Try:**\n"
+                "• Different quality (button below)\n"
+                "• Another video\n\n"
+                "⚠️ Some videos are restricted"
+            )
+            
+            # Retry button
+            retry_btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Try Other Quality", callback_data=f"retry:{user_id}")]
+            ])
+            
+            return await msg.edit_text(error_text, reply_markup=retry_btn)
         
-        title = result['title']
-        link = result['link']
-        
-        # Create audio message with button
-        audio_text = (
-            f"**🎵 {title}**\n\n"
-            f"**Click button below to download MP3:**\n\n"
+        # Success - show download button
+        success_text = (
+            f"**✅ Link Generated!**\n\n"
+            f"📹 **Quality:** {quality_text}\n\n"
+            f"**Click button to download:**\n\n"
             f"⏱️ Valid for 6 hours\n"
+            f"💡 Opens in browser\n"
             f"✅ No bot data used!"
         )
         
-        # Audio download button
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📥 Download Audio (MP3)", url=link)]
+        # Download button
+        download_btn = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Download Now", url=download_url)],
+            [InlineKeyboardButton("🔄 Change Quality", callback_data=f"retry:{user_id}")]
         ])
         
-        await msg.edit_text(audio_text, reply_markup=buttons)
-        
-        # Remove from cache
-        if msg_id in cache:
-            del cache[msg_id]
+        await msg.edit_text(success_text, reply_markup=download_btn)
         
     except Exception as e:
         await msg.edit_text(f"❌ Error: {str(e)[:100]}")
 
 
-# ========== HELPER FUNCTIONS ==========
+# ==================== RETRY CALLBACK ====================
 
-async def get_video_link(url: str) -> dict:
-    """Get video download link"""
+@Client.on_callback_query(filters.regex(r"^retry:"))
+async def retry_callback(client: Client, callback: CallbackQuery):
+    """Show quality options again"""
     
-    opts = {
-        'format': 'best[height<=720]',
-        'quiet': True,
-        'no_warnings': True
+    user_id = int(callback.data.split(":")[1])
+    
+    if callback.from_user.id != user_id:
+        return await callback.answer("❌ Not for you!", show_alert=True)
+    
+    if user_id not in video_cache:
+        return await callback.answer("❌ Expired!", show_alert=True)
+    
+    await callback.answer("Select quality again", show_alert=False)
+    await show_quality_options(callback.message, user_id)
+
+
+# ==================== API FUNCTIONS ====================
+
+async def get_video_link(url: str, quality: str) -> str:
+    """Get video download link from Cobalt API"""
+    
+    # Quality mapping
+    quality_map = {
+        "max": "max",
+        "720": "720",
+        "480": "480",
+        "360": "360"
+    }
+    
+    payload = {
+        "url": url,
+        "vCodec": "h264",
+        "vQuality": quality_map.get(quality, "720"),
+        "aFormat": "mp3",
+        "isAudioOnly": False,
+        "filenamePattern": "basic"
+    }
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
     
     try:
-        loop = asyncio.get_event_loop()
-        
-        def extract():
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return {
-                    'title': info.get('title', 'Video')[:60],
-                    'duration': info.get('duration', 0),
-                    'link': info.get('url', '')
-                }
-        
-        result = await loop.run_in_executor(None, extract)
-        return result if result and result['link'] else None
-            
-    except:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                COBALT_API,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                
+                if resp.status != 200:
+                    return None
+                
+                data = await resp.json()
+                status = data.get('status')
+                
+                # Success cases
+                if status == 'redirect' or status == 'stream':
+                    return data.get('url')
+                
+                elif status == 'picker':
+                    # Multiple videos (carousel)
+                    picker = data.get('picker', [])
+                    if picker:
+                        return picker[0].get('url')
+                
+                return None
+                
+    except Exception as e:
+        print(f"Cobalt video error: {e}")
         return None
 
 
-async def get_audio_link(url: str) -> dict:
-    """Get audio download link"""
+async def get_audio_link(url: str) -> str:
+    """Get audio download link from Cobalt API"""
     
-    opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True
+    payload = {
+        "url": url,
+        "vCodec": "h264",
+        "vQuality": "720",
+        "aFormat": "mp3",
+        "isAudioOnly": True,
+        "filenamePattern": "basic"
+    }
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
     
     try:
-        loop = asyncio.get_event_loop()
-        
-        def extract():
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return {
-                    'title': info.get('title', 'Audio')[:60],
-                    'link': info.get('url', '')
-                }
-        
-        result = await loop.run_in_executor(None, extract)
-        return result if result and result['link'] else None
-            
-    except:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                COBALT_API,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                
+                if resp.status != 200:
+                    return None
+                
+                data = await resp.json()
+                status = data.get('status')
+                
+                if status == 'redirect' or status == 'stream':
+                    return data.get('url')
+                
+                return None
+                
+    except Exception as e:
+        print(f"Cobalt audio error: {e}")
         return None
 
 
-# ========== HELP ==========
+# ==================== HELP COMMAND ====================
 
 @Client.on_message(filters.command("ythelp") & filters.private)
-async def yt_help(client: Client, message: Message):
+async def yt_help_command(client: Client, message: Message):
+    """Help command"""
+    
     help_text = (
-        "**📚 YouTube Link Generator**\n\n"
-        "`/ytlink <URL>` - Generate download links\n\n"
+        "**📚 YouTube Link Generator - Help**\n\n"
+        "**Command:**\n"
+        "`/ytlink <YouTube URL>`\n\n"
         "**How to use:**\n"
-        "1. Send YouTube link\n"
-        "2. Click download button\n"
-        "3. Browser opens → Download starts\n\n"
-        "✅ No bot data used!"
+        "1. Send YouTube link with /ytlink\n"
+        "2. Select quality from buttons\n"
+        "3. Click download button\n"
+        "4. Browser opens → Download starts\n\n"
+        "**Quality Options:**\n"
+        "• **Max Quality** - Best available\n"
+        "• **720p HD** - High quality\n"
+        "• **480p** - Medium quality\n"
+        "• **360p** - Low quality (small file)\n"
+        "• **Audio MP3** - Audio only\n\n"
+        "**Features:**\n"
+        "✅ No bot data usage\n"
+        "✅ Direct browser download\n"
+        "✅ Multiple quality options\n"
+        "✅ Retry if failed\n\n"
+        "**Note:**\n"
+        "⚠️ Some videos may not work due to:\n"
+        "• Age restrictions\n"
+        "• Region blocks\n"
+        "• Copyright protection\n\n"
+        "💡 Try different quality if one fails!"
     )
+    
     await message.reply_text(help_text)
 
 
-print("✅ YouTube Link Generator (Button Version) Loaded!")
+# ==================== STATS ====================
+
+@Client.on_message(filters.command("ytstats") & filters.private)
+async def yt_stats(client: Client, message: Message):
+    """Show stats"""
+    
+    cache_size = len(video_cache)
+    
+    stats_text = (
+        "**📊 YouTube Link Generator Stats**\n\n"
+        f"🔢 Active sessions: {cache_size}\n"
+        f"🌐 API: Cobalt.tools\n"
+        f"✅ Status: Online\n\n"
+        f"**Powered by Cobalt API** 🔥"
+    )
+    
+    await message.reply_text(stats_text)
+
+
+print("✅ YouTube Link Generator (Quality Buttons) Loaded!")
