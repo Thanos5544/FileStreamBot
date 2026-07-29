@@ -10,3 +10,4 @@ jinja2
 psutil
 Pillow
 google-generativeai
+pyrogram==2.0.106
