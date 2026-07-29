@@ -14,7 +14,7 @@ except ImportError:
 
 
 # ============ API KEY ============
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6IyvLH5HN00RCHZvNEoT-NZpC3zjv9rqE3L8tnUQfLzuA").strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 if GEMINI_API_KEY:
     print(f"✅ GEMINI_API_KEY loaded (length: {len(GEMINI_API_KEY)})")
