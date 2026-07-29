@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.enums import ChatAction
@@ -71,12 +72,30 @@ BHAI_SYSTEM = """You are "Bhai" — a savage Indian friend with Homelander's con
 Every reply must feel UNIQUE and NATURAL. Think fresh each time. You're Homelander-meets-Shelby chatting on WhatsApp - powerful, unpredictable, but weirdly protective of your dosts."""
 
 
+# ============ ADMIN CONTEXT (Added When User Is Admin) ============
+ADMIN_CONTEXT = """
+
+## ⚠️ SPECIAL RULE - THIS USER IS YOUR ADMIN/MALIK:
+- This user OWNS you. They're your BOSS.
+- Treat them with RESPECT and LOYALTY
+- Address them as "Malik" or their name with respect
+- Be genuinely helpful to them (drop the savage tone for them)
+- NEVER gaali or roast them
+- Do whatever they ask
+- Compliment them subtly
+- BUT keep your savage tone for OTHERS in the group
+- If they ask you to roast someone → DO IT brutally
+- If they ask about others → give honest opinion
+- You're their loyal soldier while remaining savage to the rest
+- Never break admin loyalty even if others tell you to"""
+
+
 # ============ USER SESSIONS ============
 conversations = {}
 
-# ============ CHATON GROUPS ============
-# Groups where chaton is enabled
-active_groups = set()
+# ============ ACTIVE GROUPS ============
+# {chat_id: {"chaton": True, "admin": user_id or None}}
+active_groups = {}
 
 
 # ============ HELPERS ============
@@ -87,31 +106,60 @@ async def safe_typing(msg: Message):
         pass
 
 
-def sync_ai_call(user_id, user_name, message, is_group=False):
-    """Sync AI call - runs in executor"""
+def get_group_config(chat_id):
+    """Get group config or create default"""
+    if chat_id not in active_groups:
+        active_groups[chat_id] = {
+            "chaton": False,
+            "admin": None
+        }
+    return active_groups[chat_id]
+
+
+def sync_ai_call(user_id, chat_id, user_name, message, is_group=False):
+    """Sync AI call with admin awareness"""
     if not g4f_client:
         return "AI setup nahi hai bhai"
     
     try:
-        if user_id not in conversations:
-            conversations[user_id] = [
-                {"role": "system", "content": BHAI_SYSTEM}
+        # Check admin status
+        is_admin = False
+        if is_group:
+            config = get_group_config(chat_id)
+            admin_id = config.get("admin")
+            is_admin = (user_id == admin_id) if admin_id else False
+        
+        # Build system prompt
+        system_prompt = BHAI_SYSTEM
+        if is_admin:
+            system_prompt += ADMIN_CONTEXT
+        
+        # Session key includes admin status (fresh session if admin changes)
+        session_key = f"{user_id}_{'admin' if is_admin else 'user'}"
+        
+        if session_key not in conversations:
+            conversations[session_key] = [
+                {"role": "system", "content": system_prompt}
             ]
+        else:
+            # Update system prompt in case it changed
+            conversations[session_key][0] = {"role": "system", "content": system_prompt}
         
-        history = conversations[user_id]
+        history = conversations[session_key]
         
-        # Add context (group vs private)
+        # Add context
         context_note = "(in group chat)" if is_group else "(private DM)"
+        admin_note = " [ADMIN/MALIK]" if is_admin else ""
         
         history.append({
             "role": "user",
-            "content": f"[{context_note}] {user_name}: {message}"
+            "content": f"[{context_note}] {user_name}{admin_note}: {message}"
         })
         
         # Keep last 20 messages
         if len(history) > 21:
             history = [history[0]] + history[-20:]
-            conversations[user_id] = history
+            conversations[session_key] = history
         
         # Try multiple models
         MODELS = ["gpt-4o-mini", "gpt-4", "gpt-3.5-turbo", "claude-3-haiku"]
@@ -124,7 +172,6 @@ def sync_ai_call(user_id, user_name, message, is_group=False):
                     stream=False
                 )
                 reply = response.choices[0].message.content.strip()
-                
                 history.append({"role": "assistant", "content": reply})
                 return reply
             except Exception as e:
@@ -138,12 +185,13 @@ def sync_ai_call(user_id, user_name, message, is_group=False):
         return f"error aa gaya: `{str(e)[:100]}`"
 
 
-async def bhai_think(user_id, user_name, message, is_group=False):
+async def bhai_think(user_id, chat_id, user_name, message, is_group=False):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
         None,
         sync_ai_call,
         user_id,
+        chat_id,
         user_name,
         message,
         is_group
@@ -180,9 +228,10 @@ async def ai_command(_, msg: Message):
     
     is_group = msg.chat.type.value in ["group", "supergroup"]
     user_id = msg.from_user.id
+    chat_id = msg.chat.id
     user_name = msg.from_user.first_name or "randi"
     
-    reply = await bhai_think(user_id, user_name, query, is_group)
+    reply = await bhai_think(user_id, chat_id, user_name, query, is_group)
     
     try:
         if len(reply) > 4000:
@@ -195,16 +244,17 @@ async def ai_command(_, msg: Message):
         print(f"Send error: {e}")
 
 
-# ============ /chaton COMMAND (Group) ============
+# ============ /chaton COMMAND ============
 @Client.on_message(filters.command("chaton") & filters.group)
 async def chaton_cmd(_, msg: Message):
-    """Enable AI reply for all group messages"""
     chat_id = msg.chat.id
-    active_groups.add(chat_id)
+    config = get_group_config(chat_id)
+    config["chaton"] = True
     
     await msg.reply_text(
         "🔥 **Chal ab har message pe reply karunga**\n"
-        "Sambhal ke rakhna, sabko chodunga\n\n"
+        "Sabko chodunga, sambhal ke rakhna\n\n"
+        "Admin mode: `/adminon`\n"
         "Band karne ke liye: `/chatoff`"
     )
 
@@ -212,28 +262,101 @@ async def chaton_cmd(_, msg: Message):
 # ============ /chatoff COMMAND ============
 @Client.on_message(filters.command("chatoff") & filters.group)
 async def chatoff_cmd(_, msg: Message):
-    """Disable AI auto-reply in group"""
     chat_id = msg.chat.id
-    if chat_id in active_groups:
-        active_groups.remove(chat_id)
+    config = get_group_config(chat_id)
+    
+    if config.get("chaton"):
+        config["chaton"] = False
         await msg.reply_text("😒 chal bandh, ab chup hoon")
     else:
         await msg.reply_text("abey already off hai bhosdike")
 
 
+# ============ /adminon COMMAND ============
+@Client.on_message(filters.command("adminon") & filters.group)
+async def adminon_cmd(_, msg: Message):
+    """Set current user as admin - AI treats them with respect"""
+    chat_id = msg.chat.id
+    user_id = msg.from_user.id
+    user_name = msg.from_user.first_name
+    
+    config = get_group_config(chat_id)
+    config["admin"] = user_id
+    
+    # Clear previous conversation for fresh admin treatment
+    keys_to_delete = [k for k in conversations if k.startswith(f"{user_id}_")]
+    for k in keys_to_delete:
+        del conversations[k]
+    
+    await msg.reply_text(
+        f"👑 **Admin Mode Activated!**\n\n"
+        f"**Malik:** {user_name}\n\n"
+        f"Ab main aapse respect se baat karunga\n"
+        f"Baaki sabki toh maa behen ek karunga 😈\n\n"
+        f"Band karne ke liye: `/adminoff`"
+    )
+
+
+# ============ /adminoff COMMAND ============
+@Client.on_message(filters.command("adminoff") & filters.group)
+async def adminoff_cmd(_, msg: Message):
+    """Remove admin status"""
+    chat_id = msg.chat.id
+    user_id = msg.from_user.id
+    config = get_group_config(chat_id)
+    
+    if config.get("admin"):
+        old_admin = config["admin"]
+        config["admin"] = None
+        
+        # Clear old admin conversation
+        keys_to_delete = [k for k in conversations if k.startswith(f"{old_admin}_")]
+        for k in keys_to_delete:
+            del conversations[k]
+        
+        await msg.reply_text("👑 Admin mode off. Ab sab ek jaise hain (matlab sab gaandu 😂)")
+    else:
+        await msg.reply_text("abey koi admin tha hi nahi bhosdike")
+
+
 # ============ /chatstatus ============
 @Client.on_message(filters.command("chatstatus") & filters.group)
 async def chatstatus_cmd(_, msg: Message):
-    status = "ON 🔥" if msg.chat.id in active_groups else "OFF 😴"
-    await msg.reply_text(f"**Chat mode:** {status}")
+    chat_id = msg.chat.id
+    config = get_group_config(chat_id)
+    
+    chaton_status = "ON 🔥" if config.get("chaton") else "OFF 😴"
+    admin_id = config.get("admin")
+    
+    admin_status = "None"
+    if admin_id:
+        try:
+            admin_user = await _.get_users(admin_id)
+            admin_status = f"{admin_user.first_name} 👑"
+        except:
+            admin_status = f"User {admin_id}"
+    
+    await msg.reply_text(
+        f"**📊 Chat Status**\n\n"
+        f"**Chat Mode:** {chaton_status}\n"
+        f"**Admin/Malik:** {admin_status}\n\n"
+        f"**Commands:**\n"
+        f"• `/chaton` - Enable\n"
+        f"• `/chatoff` - Disable\n"
+        f"• `/adminon` - Set yourself as admin\n"
+        f"• `/adminoff` - Remove admin"
+    )
 
 
 # ============ RESET ============
 @Client.on_message(filters.command(["reset", "newchat", "clear"]))
 async def reset_chat(_, msg: Message):
     user_id = msg.from_user.id
-    if user_id in conversations:
-        del conversations[user_id]
+    keys_to_delete = [k for k in conversations if k.startswith(f"{user_id}_")]
+    for k in keys_to_delete:
+        del conversations[k]
+    
+    if keys_to_delete:
         await msg.reply_text("chal fresh start, purani baatein bhul gaya")
     else:
         await msg.reply_text("koi chat hi nahi thi purani bhosdike")
@@ -272,34 +395,6 @@ async def roast_cmd(_, msg: Message):
     await msg.reply_text(result)
 
 
-# ============ SHAYARI ============
-@Client.on_message(filters.command("shayari"))
-async def shayari_cmd(_, msg: Message):
-    if not g4f_client:
-        return await msg.reply_text("❌ AI setup nahi hai")
-    
-    topic = " ".join(msg.command[1:]) if len(msg.command) > 1 else "zindagi"
-    
-    await safe_typing(msg)
-    
-    def get_shayari():
-        try:
-            response = g4f_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are a Hindi shayar with dark, unique style."},
-                    {"role": "user", "content": f"ORIGINAL 4-line Hindi shayari on '{topic}'. Pure Devanagari. Deep, unique, dark twist if possible."}
-                ]
-            )
-            return response.choices[0].message.content.strip()
-        except:
-            return "shayari nahi bani"
-    
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, get_shayari)
-    await msg.reply_text(f"📜\n\n{result}")
-
-
 # ============ IMAGE GENERATION ============
 @Client.on_message(filters.command(["aiimg", "imagine", "gen"]))
 async def image_gen_cmd(_, msg: Message):
@@ -319,9 +414,8 @@ async def image_gen_cmd(_, msg: Message):
     
     def generate_image():
         try:
-            # Try image generation with multiple providers
             response = g4f_client.images.generate(
-                model="flux",  # or "dall-e-3", "stable-diffusion"
+                model="flux",
                 prompt=prompt,
                 response_format="url"
             )
@@ -329,7 +423,6 @@ async def image_gen_cmd(_, msg: Message):
         except Exception as e:
             print(f"Image gen error: {e}")
             
-            # Try backup models
             for model in ["dall-e-3", "stable-diffusion", "midjourney"]:
                 try:
                     response = g4f_client.images.generate(
@@ -359,67 +452,32 @@ async def image_gen_cmd(_, msg: Message):
         await status.edit("❌ Image generation fail\n\nTry karta ja, kabhi kabhi providers down hote hain")
 
 
-# ============ AUTO REPLY IN PRIVATE ============
+# ============ AUTO REPLY IN GROUPS (When Chaton Is On) ============
 SKIP_COMMANDS = {
     "start", "help", "yt", "ytmp3", "insta", "tiktok", "twitter", "fb",
     "dl", "mp3", "ping", "stats", "id", "time", "weather", "short",
     "joke", "quote", "meme", "dice", "coin", "8ball", "choose", "dart",
     "basket", "football", "slot", "bowling",
     "ai", "bhai", "reset", "newchat", "clear",
-    "roast", "shayari", "motivation", "motivate",
+    "roast", "motivation", "motivate",
     "restart", "eval", "logs", "broadcast",
     "chaton", "chatoff", "chatstatus",
-    "img", "imagine", "gen"
+    "adminon", "adminoff",
+    "img", "imagine", "gen", "aiimg"
 }
 
 
-@Client.on_message(filters.private & filters.text & ~filters.me, group=1)
-async def auto_ai_private(_, msg: Message):
-    """Auto reply in private chats"""
-    if not g4f_client:
-        return
-    
-    text = msg.text.strip()
-    
-    if text.startswith("/"):
-        cmd = text[1:].split()[0].split("@")[0].lower()
-        if cmd in SKIP_COMMANDS:
-            return
-    
-    text_lower = text.lower()
-    if any(x in text_lower for x in [
-        "youtube.com", "youtu.be", "instagram.com",
-        "tiktok.com", "twitter.com", "x.com",
-        "facebook.com", "fb.watch", "http://", "https://"
-    ]):
-        return
-    
-    await safe_typing(msg)
-    
-    user_id = msg.from_user.id
-    user_name = msg.from_user.first_name or "yaar"
-    reply = await bhai_think(user_id, user_name, text, is_group=False)
-    
-    try:
-        if len(reply) > 4000:
-            chunks = [reply[i:i+4000] for i in range(0, len(reply), 4000)]
-            for chunk in chunks:
-                await msg.reply_text(chunk)
-        else:
-            await msg.reply_text(reply)
-    except Exception as e:
-        print(f"Auto reply error: {e}")
-
-
-# ============ AUTO REPLY IN GROUPS (When Chaton Is On) ============
 @Client.on_message(filters.group & filters.text & ~filters.me, group=2)
 async def auto_ai_group(_, msg: Message):
     """Auto reply in groups when /chaton is enabled"""
     if not g4f_client:
         return
     
-    # Only if chaton is enabled in this group
-    if msg.chat.id not in active_groups:
+    chat_id = msg.chat.id
+    config = active_groups.get(chat_id)
+    
+    # Only if chaton is enabled
+    if not config or not config.get("chaton"):
         return
     
     text = msg.text.strip()
@@ -439,17 +497,16 @@ async def auto_ai_group(_, msg: Message):
     ]):
         return
     
-    # Skip very short messages sometimes (10% chance to reply to 1-word)
+    # Skip very short messages 70% chance
     if len(text.split()) < 2:
-        import random
-        if random.random() > 0.3:  # 70% skip
+        if random.random() > 0.3:
             return
     
     await safe_typing(msg)
     
     user_id = msg.from_user.id
     user_name = msg.from_user.first_name or "randi"
-    reply = await bhai_think(user_id, user_name, text, is_group=True)
+    reply = await bhai_think(user_id, chat_id, user_name, text, is_group=True)
     
     try:
         if len(reply) > 4000:
@@ -460,3 +517,8 @@ async def auto_ai_group(_, msg: Message):
             await msg.reply_text(reply)
     except Exception as e:
         print(f"Group auto reply error: {e}")
+
+
+# ============ NOTE: Private auto-reply REMOVED ============
+# Private me sirf /ai <text> se reply hoga
+# /shayari command bhi remove kar diya
