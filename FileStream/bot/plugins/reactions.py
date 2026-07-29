@@ -3,31 +3,29 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
-# ============ TERE CUSTOM EMOJIS ============
 REACTIONS = [
-    "👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "😱", 
-    "🎉", "🤩", "🤡", "🌚", "🤣", "⚡", "🏆", 
-    "🤨", "😐", "😈", "🤓", "👻", "😇", "🤝", "🤗", 
+    "👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "😱",
+    "🎉", "🤩", "🤡", "🌚", "🤣", "⚡", "🏆",
+    "🤨", "😐", "😈", "🤓", "👻", "😇", "🤝", "🤗",
     "🫡", "🎅", "🎄", "🆒", "😘", "😎"
 ]
 
 
-# ============ group=-1 = pehle chalega, doosre handlers ko block nahi karega ============
+# group=-1 = pehle chalega but block nahi karega baaki plugins ko
 @Client.on_message(~filters.me, group=-1)
 async def auto_react(_, msg: Message):
-    """Har message pe emoji reaction — non-blocking"""
+    """Background reaction - doesn't block other handlers"""
     try:
-        # Async task me react karo taaki main handler wait na kare
-        asyncio.create_task(react_to_message(msg))
+        # Background task me react karo (non-blocking)
+        asyncio.create_task(add_reaction(msg))
     except Exception as e:
-        print(f"Reaction task error: {e}")
+        print(f"React task error: {e}")
 
 
-async def react_to_message(msg: Message):
-    """Actual reaction logic (background me chalega)"""
+async def add_reaction(msg: Message):
+    """Reaction ka actual kaam yahan hota hai"""
     try:
         emoji = random.choice(REACTIONS)
         await msg.react(emoji=emoji)
-    except Exception as e:
-        # Silent fail
-        pass
+    except:
+        pass  # Silent fail
