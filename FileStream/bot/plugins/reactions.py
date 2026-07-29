@@ -1,31 +1,33 @@
 import random
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # ============ TERE CUSTOM EMOJIS ============
 REACTIONS = [
     "👍", "❤", "🔥", "🥰", "👏", "😁", "🤔", "😱", 
-    "🎉", "🤩", "🤡", "❤‍🔥", "🌚", "🤣", "⚡", "🏆", 
+    "🎉", "🤩", "🤡", "🌚", "🤣", "⚡", "🏆", 
     "🤨", "😐", "😈", "🤓", "👻", "😇", "🤝", "🤗", 
     "🫡", "🎅", "🎄", "🆒", "😘", "😎"
 ]
 
 
-@Client.on_message(~filters.me)
+# ============ group=-1 = pehle chalega, doosre handlers ko block nahi karega ============
+@Client.on_message(~filters.me, group=-1)
 async def auto_react(_, msg: Message):
-    """
-    Har message pe random emoji reaction lagao
-    - Har type ka message (text, photo, video, sticker, etc)
-    - Command bhi, normal message bhi
-    - Bot khud ke messages skip
-    """
+    """Har message pe emoji reaction — non-blocking"""
     try:
-        # Random emoji pick karo
-        emoji = random.choice(REACTIONS)
-        
-        # Reaction lagao
-        await msg.react(emoji=emoji)
-    
+        # Async task me react karo taaki main handler wait na kare
+        asyncio.create_task(react_to_message(msg))
     except Exception as e:
-        # Silent fail - rate limit ya invalid emoji error skip
-        print(f"Reaction failed: {e}")
+        print(f"Reaction task error: {e}")
+
+
+async def react_to_message(msg: Message):
+    """Actual reaction logic (background me chalega)"""
+    try:
+        emoji = random.choice(REACTIONS)
+        await msg.react(emoji=emoji)
+    except Exception as e:
+        # Silent fail
+        pass
