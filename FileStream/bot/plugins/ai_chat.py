@@ -378,7 +378,6 @@ async def bhai_think(user_id, chat_id, user_name, message, is_group=False):
         message,
         is_group
     )
-
 # ============ /ai COMMAND ============
 @Client.on_message(filters.command(["ai", "bhai"]))
 async def ai_command(_, msg: Message):
