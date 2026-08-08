@@ -11,3 +11,4 @@ psutil
 Pillow
 g4f
 curl_cffi
+yt-dlp>=2024.1.0
