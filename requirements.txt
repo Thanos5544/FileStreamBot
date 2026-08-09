@@ -11,4 +11,3 @@ psutil
 Pillow
 g4f
 curl_cffi
-beautifulsoup4
