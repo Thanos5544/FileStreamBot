@@ -250,7 +250,7 @@ class HDQWallsScraper:
 wall_sessions = {}
 
 
-@Client.on_message(filters.command(["8k", "4k", "batman"]) & filters.private)
+@Client.on_message(filters.command(["wall", "4k", "wallpaper"]) & filters.private)
 async def wall_command(client: Client, message: Message):
     """
     Command: /wall <search_query>
