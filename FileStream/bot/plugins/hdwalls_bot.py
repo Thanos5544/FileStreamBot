@@ -39,7 +39,7 @@ async def send_img(c,uid,path,cap,btns):
     try: os.remove(path)
     except: pass
 
-@Client.on_message(filters.command(["wall"])&filters.private)
+@Client.on_message(filters.command(["ll"])&filters.private)
 async def wall(c,m):
     try: q=m.text.split(None,1)[1].strip()
     except IndexError: q=""
