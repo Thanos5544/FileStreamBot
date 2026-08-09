@@ -1,357 +1,399 @@
 """
-HDQWalls Wallpaper Downloader Plugin (FIXED VERSION)
-Commands: /wall, /4k, /wallpaper
+HDQWalls Wallpaper Downloader (FIXED WORKING VERSION)
+Command: /wall <query>
 """
 
 import io
 import os
 import re
 from pathlib import Path
-from urllib.parse import quote_plus, urljoin
-
+from urllib.parse import quote_plus, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
-TEMP_FOLDER = "temp/wallpapers"
-Path(TEMP_FOLDER).mkdir(parents=True, exist_ok=True)
+TEMP = "temp/walls"
+Path(TEMP).mkdir(parents=True, exist_ok=True)
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Referer': 'https://hdqwalls.com/',
 }
-BASE_URL = "https://hdqwalls.com"
 
-class HDQWallsScraper:
+class WallScraper:
     
     @staticmethod
-    def search(query, limit=6):
+    def find_wallpapers(query, count=6):
+        """
+        Robust finder - tries multiple methods
+        """
+        results = []
+        
+        # Method 1: Direct category/search URL
+        results = WallScraper._try_search_url(query, count)
+        if results:
+            return results
+            
+        # Method 2: Google Images fallback
+        results = WallScraper._fallback_google(query, count)
+        return results
+    
+    @staticmethod
+    def _try_search_url(query, limit):
+        """Try scraping HDQWalls directly"""
         try:
-            search_url = f"{BASE_URL}/wallpapers/{quote_plus(query)}"
-            print(f"[HDQWalls] Searching: {search_url}")
+            # Try multiple URL patterns
+            urls_to_try = [
+                f"https://hdqwalls.com/wallpapers/{quote_plus(query)}",
+                f"https://hdqwalls.com/wallpaper/{quote_plus(query)}",
+                f"https://hdqwalls.com/search?query={quote_plus(query)}"
+            ]
             
-            response = requests.get(search_url, headers=HEADERS, timeout=15)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            results = []
-            
-            # Find wallpaper items
-            items = soup.find_all('div', class_='wallpaper-item') or \
-                   soup.find_all('article') or \
-                   soup.find_all('a', href=re.compile(r'/wallpaper/'))
-            
-            if not items:
-                # Fallback pattern
-                items = soup.find_all('img', src=re.compile(r'hdqwalls|wallpaper'))
-            
-            count = 0
-            seen_urls = set()
-            
-            for item in items[:limit*2]:
+            for search_url in urls_to_try:
+                print(f"[WALL] Trying: {search_url}")
+                
                 try:
-                    if item.name == 'a':
-                        link = item.get('href')
-                        img_tag = item.find('img')
-                    elif item.name == 'img':
-                        link = item.parent.get('href') if item.parent else None
-                        img_tag = item
-                    else:
-                        link_tag = item.find('a', href=True)
-                        link = link_tag['href'] if link_tag else None
-                        img_tag = item.find('img')
-                    
-                    if not link or link in seen_urls or not img_tag:
+                    resp = requests.get(search_url, headers=HEADERS, timeout=10)
+                    if resp.status_code != 200:
                         continue
+                        
+                    soup = BeautifulSoup(resp.text, 'html.parser')
                     
-                    seen_urls.add(link)
+                    # Pattern 1: Main wrapper
+                    items = soup.select('div.wallpaper-entry') or \
+                           soup.select('div.thumb') or \
+                           soup.select('article') or \
+                           soup.select('.wallpaper-item')
                     
-                    full_link = urljoin(BASE_URL, link)
-                    preview_src = img_tag.get('src') or img_tag.get('data-src')
-                    if preview_src and not preview_src.startswith('http'):
-                        preview_src = urljoin(BASE_URL, preview_src)
+                    # Pattern 2: Look for links containing /wallpaper/
+                    if not items:
+                        items = soup.find_all('a', href=re.compile(r'/wallpaper/[a-z0-9\-]+$', re.I))
                     
-                    title = img_tag.get('alt', '')
-                    if not title:
-                        t = item.find('h3') or item.find('h2')
-                        title = t.get_text(strip=True) if t else query
+                    # Pattern 3: Look for images with wallpapers in alt
+                    if not items:
+                        items = soup.find_all('img', alt=re.compile(r'wallpaper|4k|hd', re.I))
                     
-                    if not title:
-                        continue
+                    found = []
+                    seen = set()
                     
-                    dl_info = HDQWallsScraper._get_download_links(full_link)
+                    for item in items[:20]:  # Check first 20
+                        try:
+                            link, title, thumb = WallScraper._extract_data(item)
+                            if not link or link in seen:
+                                continue
+                            
+                            seen.add(link)
+                            dl = WallScraper._get_download_page(urljoin("https://hdqwalls.com", link))
+                            
+                            found.append({
+                                'title': title,
+                                'page': urljoin("https://hdqwalls.com", link),
+                                'preview': thumb,
+                                **dl
+                            })
+                            
+                            if len(found) >= limit:
+                                break
+                        except:
+                            continue
                     
-                    results.append({
-                        'title': title,
-                        'page_url': full_link,
-                        'preview_url': preview_src,
-                        **dl_info
-                    })
-                    
-                    count += 1
-                    if count >= limit:
-                        break
+                    if found:
+                        print(f"[WALL] Found {len(found)} items via pattern")
+                        return found
                         
                 except Exception as e:
+                    print(f"[WALL] URL failed: {e}")
                     continue
+            
+            return None
+            
+        except Exception as e:
+            print(f"[WALL] Search Error: {e}")
+            return None
+    
+    @staticmethod
+    def _extract_data(item):
+        """Extract link, title, thumbnail from element"""
+        link = None
+        title = ""
+        thumb = None
+        
+        if item.name == 'a':
+            link = item.get('href', '')
+            img = item.find('img')
+            if img:
+                title = img.get('alt', '')
+                thumb = img.get('src') or img.get('data-src')
+        
+        elif item.name == 'img':
+            title = item.get('alt', '') or ''
+            thumb = item.get('src') or item.get('data-src')
+            parent_a = item.parent
+            if parent_a and parent_a.name == 'a':
+                link = parent_a.get('href')
+            
+            # If still no link, look for grandparent
+            if not link and parent_a:
+                gp = parent_a.parent
+                if gp and gp.name == 'a':
+                    link = gp.get('href')
+        
+        else:
+            # Generic container (div, article)
+            a_tag = item.find('a', href=True)
+            if a_tag:
+                link = a_tag['href']
+            img_tag = item.find('img')
+            if img_tag:
+                title = img_tag.get('alt', '') or (item.find('h3').get_text() if item.find('h3') else query)
+                thumb = img_tag.get('src') or img_tag.get('data-src')
+        
+        # Clean up URLs
+        if thumb and not thumb.startswith(('http', '//')):
+            thumb = urljoin("https://hdqwalls.com/", thumb)
+        elif thumb and thumb.startswith('//'):
+            thumb = 'https:' + thumb
+            
+        return link, title, thumb
+    
+    @staticmethod
+    def _get_download_page(page_url):
+        """Get download links from wallpaper page"""
+        info = {'orig': None, 'res': '4K', 'size': '~2MB'}
+        
+        try:
+            r = requests.get(page_url, headers=HEADERS, timeout=8)
+            s = BeautifulSoup(r.text, 'html.parser')
+            
+            # Look for original image
+            # Usually in og:image meta tag
+            og = s.find('meta', property='og:image')
+            if og:
+                info['orig'] = og['content']
+            
+            # Look for download buttons/links
+            if not info['orig']:
+                # Common patterns on HDQWalls
+                dls = s.find_all('a', href=re.compile(r'\.(jpg|png|jpeg)', re.I))
+                if dls:
+                    href = dls[0].get('href', '')
+                    if not href.startswith('http'):
+                        href = urljoin(page_url, href)
+                    info['orig'] = href
+            
+            # Resolution extraction
+            res_match = re.search(r'(\d{3,4}x\d{3,4})', r.text)
+            if res_match:
+                info['res'] = res_match.group(1)
+                
+        except Exception as e:
+            print(f"[WALL] Page parse err: {e}")
+        
+        # Final fallback: if no orig, use page itself (sometimes page is image)
+        if not info['orig']:
+            info['orig'] = page_url
+            
+        return info
+    
+    @staticmethod
+    def _fallback_google(query, limit=5):
+        """Fallback using DuckDuckGo or direct image search"""
+        print("[WALL] Using fallback search...")
+        try:
+            # Use DuckDuckGo HTML version (no JS needed)
+            url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' wallpaper 4k hdqwalls')}"
+            r = requests.get(url, headers={'User-Agent': HEADERS['User-Agent']}, timeout=10)
+            s = BeautifulSoup(r.text, 'html.parser')
+            
+            results = []
+            for a in s.find_all('a', class_='result__url')[:limit*2]:
+                href = a.get_text(strip=True)
+                if 'hdqwalls.com' in href or 'wallpaper' in href.lower():
+                    # Extract image from result snippet
+                    parent = a.find_parent('div', class_='result')
+                    if parent:
+                        thumb = parent.find('img', class_='result__icon')
+                        thumb_src = thumb.get('src') if thumb else None
+                        
+                        title = parent.find('h2', class_='result__title')
+                        title_txt = title.get_text() if title else query
+                        
+                        dl_info = WallScraper._get_download_page(href) if 'hdqwalls' in href else {
+                            'orig': href.replace('/wallpaper/', '/download/') if 'hdqwalls' in href else href,
+                            'res': 'Unknown'
+                        }
+                        
+                        results.append({
+                            'title': title_txt[:60],
+                            'page': href,
+                            'preview': thumb_src,
+                            **dl_info
+                        })
+                        
+                        if len(results) >= limit:
+                            break
             
             return results if results else None
             
         except Exception as e:
-            print(f"[HDQWalls] Error: {e}")
+            print(f"[WALL] Fallback failed: {e}")
             return None
     
     @staticmethod
-    def _get_download_links(page_url):
+    def optimize(img_path):
+        """Compress for mobile"""
         try:
-            resp = requests.get(page_url, headers=HEADERS, timeout=10)
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            img = Image.open(img_path).convert('RGB')
+            max_s = 1920
+            if max(img.size) > max_s:
+                ratio = max_s / max(img.size)
+                img = img.resize((int(img.size[0]*ratio), int(img.size[1]*ratio)), Image.LANCZOS)
             
-            info = {
-                'original_url': None,
-                'optimized_url': None,
-                'resolution': 'Unknown',
-                'size': 'Unknown'
-            }
-            
-            links = soup.find_all('a', href=re.compile(r'\.(jpg|jpeg|png)', re.I))
-            
-            for link in links:
-                href = link.get('href', '')
-                text = link.get_text(strip=True).lower()
-                
-                if not href.startswith('http'):
-                    href = urljoin(BASE_URL, href)
-                
-                if not info['original_url']:
-                    info['original_url'] = href
-                
-                if 'download' in text or '1080' in text:
-                    info['optimized_url'] = href
-            
-            res_match = re.search(r'(\d{3,4}x\d{3,4})', resp.text)
-            if res_match:
-                info['resolution'] = res_match.group(1)
-            
-            size_match = re.search(r'(\d+\.?\d*\s*MB)', resp.text, re.I)
-            if size_match:
-                info['size'] = size_match.group(1)
-            
-            if not info['original_url']:
-                og_img = soup.find('meta', property='og:image')
-                if og_img:
-                    info['original_url'] = og_img.get('content')
-            
-            return info
-            
-        except Exception as e:
-            return {'original_url': page_url, 'optimized_url': page_url}
-    
-    @staticmethod
-    def optimize_for_mobile(image_path, max_size_kb=2000):
-        try:
-            img = Image.open(image_path)
-            max_dimension = 1920
-            if max(img.size) > max_dimension:
-                ratio = max_dimension / max(img.size)
-                new_size = tuple(int(dim * ratio) for dim in img.size)
-                img = img.resize(new_size, Image.LANCZOS)
-            
-            if img.mode in ('RGBA', 'P'):
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                if img.mode == 'P':
-                    img = img.convert('RGBA')
-                background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-                img = background
-            
-            output = io.BytesIO()
-            quality = 85
+            out = io.BytesIO()
+            q = 85
             while True:
-                output.truncate(0)
-                output.seek(0)
-                img.save(output, format='JPEG', quality=quality, optimize=True)
-                
-                size_kb = len(output.getvalue()) / 1024
-                if size_kb <= max_size_kb or quality <= 50:
-                    break
-                quality -= 10
-            
-            output.seek(0)
-            return output, f"{img.size[0]}x{img.size[1]}"
-            
+                out.seek(0); out.truncate()
+                img.save(out, 'JPEG', quality=q, optimize=True)
+                if len(out.getvalue())/(1024*1024) <= 4 or q <= 50: break
+                q -= 10
+            out.seek(0)
+            return out, f"{img.size[0]}x{img.size[1]}"
         except Exception as e:
             return None, str(e)
 
+sessions = {}
 
-wall_sessions = {}
-
-@Client.on_message(filters.command(["wall", "4k", "wallpaper"]) & filters.private)
-async def wall_command(client: Client, message: Message):
+@Client.on_message(filters.command(["wall","4k"]) & filters.private)
+async def wall_cmd(c, m):
     try:
-        query = message.text.split(None, 1)[1] if len(message.command) > 1 else ""
+        q = m.text.split(None, 1)[1].strip()
     except:
-        query = ""
+        q = ""
     
-    if not query:
-        await message.reply_text(
-            "🖼️ **HDQWalls Downloader**\n\n"
-            "**Usage:**\n"
-            "`/wall iron man`\n"
-            "`/4k anime girl`\n",
-            parse_mode='markdown'
+    if not q:
+        await m.reply("**🖼️ Wallpaper Bot**\n\nUsage:\n`/wall batman`\n`/4k iron man`\n`/wall nature 4k`", parse_mode='md')
+        return
+    
+    wait = await m.reply(f"🔍 Searching **{q}**...")
+    
+    scr = WallScraper()
+    res = scr.find_wallpapers(q, 5)
+    
+    if not res:
+        await wait.edit_text(
+            f"❌ **Not Found:** `{q}`\n\n"
+            f"Try:\n• Different keywords\n• English names only\n• Shorter queries",
+            parse_mode='md'
         )
         return
     
-    searching_msg = await message.reply_text(f"🔍 Searching **{query}**...")
+    uid = m.from_user.id
+    sessions[uid] = {'r': res, 'i': 0}
     
-    scraper = HDQWallsScraper()
-    results = scraper.search(query, limit=5)
-    
-    if not results:
-        await searching_msg.edit_text(f"❌ No wallpapers found for **{query}**")
-        return
-    
-    user_id = message.from_user.id
-    wall_sessions[user_id] = {'results': results, 'index': 0, 'query': query}
-    
-    await _send_result(client, message, user_id, 0)
-    await searching_msg.delete()
+    await show_result(c, wait, uid, 0)
 
-
-async def _send_result(client, msg, user_id, index):
-    session = wall_sessions.get(user_id)
-    if not session:
-        return
+async def show_result(c, msg, uid, idx):
+    ses = sessions[uid]
+    r = ses['r']
+    idx = max(0, min(idx, len(r)-1))
+    ses['i'] = idx
     
-    results = session['results']
-    if index >= len(results):
-        index = 0
-    if index < 0:
-        index = len(results) - 1
+    d = r[idx]
     
-    data = results[index]
-    session['index'] = index
-    
-    caption = (
-        f"🖼️ **{data['title']}**\n\n"
-        f"📐 Resolution: `{data.get('resolution', 'N/A')}`\n"
-        f"📦 Size: `{data.get('size', 'N/A')}`\n\n"
-        f"_Select option below 👇_"
+    txt = (
+        f"**🖼️ {d['title']}**\n\n"
+        f"📐 Resolution: `{d.get('res','N/A')}`\n"
+        f"📦 Size: `{d.get('size','~2MB')}`\n\n"
+        f"_Choose option 👇_"
     )
     
-    total = len(results)
-    buttons = [
+    btns = [
         [
-            InlineKeyboardButton("◀ Prev", callback_data=f"wp_{index-1}"),
-            InlineKeyboardButton(f"{index+1}/{total}", callback_data="wp_info"),
-            InlineKeyboardButton("Next ▶", callback_data=f"wp_{index+1}")
+            InlineKeyboardButton("◀ Prev", callback_data=f"w_{idx-1}"),
+            InlineKeyboardButton(f"{idx+1}/{len(r)}", callback_data="wi"),
+            InlineKeyboardButton("Next ▶", callback_data=f"w_{idx+1}")
         ],
         [
-            InlineKeyboardButton("⚡ Mobile", callback_data=f"wpmobile_{index}"),
-            InlineKeyboardButton("📥 Original", callback_data=f"wporig_{index}")
+            InlineKeyboardButton("⚡ Mobile (Fast)", callback_data=f"wm_{idx}"),
+            InlineKeyboardButton("📥 Original (4K)", callback_data=f"wo_{idx}")
         ]
     ]
     
-    markup = InlineKeyboardMarkup(buttons)
-    preview_url = data.get('preview_url') or data.get('original_url')
-    
-    if hasattr(msg, 'reply_photo'):
-        await msg.reply_photo(photo=preview_url, caption=caption, reply_markup=markup, parse_mode='markdown')
-    elif hasattr(msg, 'message'):
-        await client.send_photo(chat_id=msg.chat.id, photo=preview_url, caption=caption, reply_markup=markup, parse_mode='markdown')
-
-
-@Client.on_callback_query(filters.regex("^wp"))
-async def wp_callbacks(client: Client, query: CallbackQuery):
-    user_id = query.from_user.id
-    parts = query.data.split('_')
-    
-    if user_id not in wall_sessions:
-        await query.answer("Session expired!", show_alert=True)
-        return
-    
-    action = parts[0].replace("wp", "")
-    
-    if action == 'info':
-        await query.answer("Wallpaper Info", show_alert=False)
-        return
-    
-    idx = int(parts[1]) if parts[1] else 0
-    
-    if action == '':
-        # Navigation check removed for simplicity
-        pass
-    elif parts[0] == "wpmobile":
-        await query.answer("Preparing mobile...")
-        await _download_send(client, query, user_id, idx, mode="mobile")
-        return
-    elif parts[0] == "wporig":
-        await query.answer("Downloading original...")
-        await _download_send(client, query, user_id, idx, mode="original")
-        return
-    
-    await query.answer()
-    new_idx = idx
     try:
-        if action == '-':
-            new_idx -= 1
-        elif action == '+':
-            new_idx += 1
-        
-        results_len = len(wall_sessions[user_id]['results'])
-        if new_idx < 0:
-            new_idx = results_len - 1
-        if new_idx >= results_len:
-            new_idx = 0
-            
-        await _send_result(client, query, user_id, new_idx)
-    except:
-        pass
-
-
-async def _download_send(client, callback, user_id, index, mode="mobile"):
-    session = wall_sessions[user_id]
-    data = session['results'][index]
-    
-    status = await callback.message.reply_text("⏳ Processing...")
-    
-    try:
-        url = data.get('original_url') or data.get('page_url')
-        
-        tmp_file = f"{TEMP_FOLDER}/dl_{user_id}_{index}.jpg"
-        response = requests.get(url, headers=HEADERS, timeout=30, stream=True)
-        
-        with open(tmp_file, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        if mode == "mobile":
-            opt_img, dims = HDQWallsScraper.optimize_for_mobile(tmp_file)
-            if opt_img:
-                filename = f"{data['title'][:30]}_mobile.jpg".replace("/", "_")
-                await client.send_document(
-                    chat_id=callback.message.chat.id,
-                    document=opt_img,
-                    file_name=filename,
-                    caption=f"⚡ **Mobile Optimized**\n{dims}",
-                    force_document=False
-                )
-            else:
-                raise Exception("Optimization failed")
+        preview = d.get('preview') or d.get('orig')
+        if hasattr(msg, 'edit_text') and hasattr(msg, 'reply_photo'):
+            await msg.delete()
+            await c.send_photo(m.chat.id, preview, caption=txt, reply_markup=InlineKeyboardMarkup(btns), parse_mode='md')
         else:
-            file_size = os.path.getsize(tmp_file) / (1024*1024)
-            filename = f"{data['title'][:30]}_4K.jpg".replace("/", "_")
-            await client.send_document(
-                chat_id=callback.message.chat.id,
-                document=tmp_file,
-                file_name=filename,
-                caption=f"📥 **Original** ({file_size:.2f}MB)"
-            )
+            await c.send_photo(m.chat.id, preview, caption=txt, reply_markup=InlineKeyboardMarkup(btns), parse_mode='md')
+    except Exception as e:
+        await msg.edit_text(txt + f"\n\n[Preview Link]({d.get('page','#')})", 
+                          reply_markup=InlineKeyboardMarkup(btns), disable_web_page_preview=True, parse_mode='md')
+
+@Client.on_callback_query(re.compile("^w"))
+async def cb(c, q):
+    uid = q.from_user.id
+    if uid not in sessions:
+        await q.answer("Expired! Search again.", show_alert=True); return
+    
+    d = q.data.split('_')
+    t = d[0]
+    i = int(d[1]) if len(d)>1 and d[1] else sessions[uid]['i']
+    
+    if t == 'wi':
+        await q.answer("Info", show_alert=False); return
+    
+    if len(t) > 1:  # wm_ or wo_
+        mode = 'mobile' if 'm' in t else 'original'
+        await dl_send(c, q, i, mode)
+    else:  # Navigation w_N
+        new_i = i
+        if '-' in q.data: new_i -= 1
+        elif '+' in q.data: new_i += 1
         
-        if os.path.exists(tmp_file):
-            os.remove(tmp_file)
-        await status.delete()
+        total = len(sessions[uid]['r'])
+        if new_i < 0: new_i = total-1
+        if new_i >= total: new_i = 0
+        
+        await q.answer()
+        await show_result(c, q.message, uid, new_i)
+
+async def dl_send(c, cb, idx, mode="mobile"):
+    ses = sessions[cb.from_user.id]
+    d = ses['r'][idx]
+    st = await cb.message.reply_text("⏳ Downloading...")
+    
+    try:
+        url = d.get('orig') or d.get('page')
+        
+        fp = f"{TEMP}/wp_{cb.from_user.id}_{idx}.jpg"
+        
+        # Download with proper stream
+        r = requests.get(url, headers=HEADERS, timeout=30, stream=True)
+        r.raise_for_status()
+        
+        with open(fp,'wb') as f:
+            for ch in r.iter_content(chunk_size=8192):
+                f.write(ch)
+        
+        sz = os.path.getsize(fp)/(1024*1024)
+        
+        if mode == 'mobile':
+            opt, dims = WallScraper.optimize(fp)
+            nm = f"{d['title'][:25]}_mob.jpg".replace('/','_')
+            c.send_document(cb.message.chat.id, opt, file_name=nm, 
+                          caption=f"⚡ Optimized ({dims})\n🖼️ {d['title']}", force_document=False)
+        else:
+            nm = f"{d['title'][:25]}_4K.jpg".replace('/','_')
+            c.send_document(cb.message.chat.id, fp, file_name=nm, 
+                          caption=f"📥 Original ({sz:.1f}MB)\n📐 {d.get('res','4K')}")
+        
+        if os.path.exists(fp): os.remove(fp)
+        await st.delete()
         
     except Exception as e:
-        await status.edit_text(f"❌ Error: {str(e)}")
+        await st.edit_text(f"❌ Failed: {str(e)[:100]}\n\nLink: `{d.get('page','N/A')}`", parse_mode='md')
